@@ -309,6 +309,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # タイプごとに処理
+    output_paths = []
     for obj_type in args.types:
 
         # udx/<type> を探索（-i がルート・udx・udx/type どれでも対応）
@@ -342,7 +343,7 @@ def main():
 
         unit = '棟' if obj_type == 'bldg' else '件'
 
-        print(f'\n--- {obj_type} / LOD{args.lod} / {len(target)} ブロック ---')
+        print(f'\n======= {obj_type} / LOD{args.lod} / {len(target)} ブロック =======')
 
         # ブロックごとにデータを取得
         mesh_buildings = []
@@ -350,7 +351,7 @@ def main():
             mesh_code = gml_file.split('_')[0]
             gml_path  = os.path.join(input_dir, gml_file)
             buildings, skipped = parse_gml(gml_path, args.lod, obj_type)
-            extra = f' (LOD2 なし → LOD1 で代替: {skipped} {unit})' if skipped else ''
+            extra = f' (内 LOD1 で代替: {skipped} {unit})' if skipped else ''
             print(f'  {gml_file}: {len(buildings)} {unit}{extra}')
             mesh_buildings.append((mesh_code, buildings, skipped))
 
@@ -367,16 +368,21 @@ def main():
         label = ' + '.join(mesh_codes)
 
         total = write_obj_file(out_path, [(mc, b) for mc, b, _ in mesh_buildings], args.lod, label)
+        output_paths.append(out_path)
 
         total_skipped = sum(s for _, _, s in mesh_buildings)
         total_lod2 = total - total_skipped if args.lod == 2 else 0
 
-        print(f'\n========================================')
-        print(f'  出力先   : {out_path}')
         print(f'  総数     : {total} {unit}')
         if args.lod == 2:
             print(f'  LOD2     : {total_lod2} {unit}')
             print(f'  LOD1代替 : {total_skipped} {unit}（LOD2データなし）')
+        print(f'========================================')
+
+    if output_paths:
+        print()
+        print(f'  出力先   : {output_dir}')
+        print(f'========================================')
         print(f'========================================')
 
 
