@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code
+.claude/
+
+# 入力データ（サンプル以外は非公開）
+resources/input/*/
+!resources/input/13209_machida-shi_pref_2023_citygml_2_op/
+resources/input/13209_machida-shi_pref_2023_citygml_2_op/*/
+!resources/input/13209_machida-shi_pref_2023_citygml_2_op/udx/
+resources/input/13209_machida-shi_pref_2023_citygml_2_op/udx/*/
+!resources/input/13209_machida-shi_pref_2023_citygml_2_op/udx/bldg/
+resources/input/13209_machida-shi_pref_2023_citygml_2_op/udx/bldg/*
+!resources/input/13209_machida-shi_pref_2023_citygml_2_op/udx/bldg/53392339_bldg_6697_op.gml
+!resources/input/13209_machida-shi_pref_2023_citygml_2_op/udx/bldg/53392391_bldg_6697_op.gml
+
+# 出力データ（非公開）
+resources/output/*
+!resources/output/.gitkeep
