@@ -118,21 +118,22 @@ TYPE_CONFIG = {
     },
 }
 
-# 緯度経度 → メートル変換係数（等距離円筒図法）
+# 緯度経度 → ミリメートル変換係数（等距離円筒図法）
 # 基準緯度を日本中心付近 (35°) に設定
+# Rhino の標準単位（mm）に合わせて出力する
 _REF_LAT_RAD = math.radians(35.0)
-_M_PER_DEG_LAT = 111320.0                            # 緯度 1° あたりの距離 (m)
-_M_PER_DEG_LON = 111320.0 * math.cos(_REF_LAT_RAD)  # 経度 1° あたりの距離 (m)
+_MM_PER_DEG_LAT = 111320.0 * 1000                            # 緯度 1° あたりの距離 (mm)
+_MM_PER_DEG_LON = 111320.0 * 1000 * math.cos(_REF_LAT_RAD)  # 経度 1° あたりの距離 (mm)
 
 
 def latlon_to_m(lat, lon, height):
     """
-    緯度経度 + 標高をメートル座標に変換する。
+    緯度経度 + 標高をミリメートル座標に変換する。
     X = 東方向, Y = 北方向, Z = 高さ (Rhino の Z-up に合わせる)
     """
-    x = lon * _M_PER_DEG_LON
-    y = lat * _M_PER_DEG_LAT
-    z = height
+    x = lon * _MM_PER_DEG_LON
+    y = lat * _MM_PER_DEG_LAT
+    z = height * 1000
     return (x, y, z)
 
 # ---------------------------------------------------------------
