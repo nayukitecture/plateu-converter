@@ -14,7 +14,8 @@ PLATEAU オープンデータは以下から入手できます。
 
 **https://www.mlit.go.jp/plateau/open-data/**
 
-ダウンロードした ZIP を展開し、`resources/input/` 以下に配置してください。
+ダウンロードした ZIP を展開し、`resources/input/` 以下に配置してください。  
+`resources/input/` フォルダがない場合は初回起動時に自動で作成されます。
 
 ```
 resources/input/

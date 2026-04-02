@@ -387,6 +387,13 @@ def interactive_mode():
     # スクリプトの隣の resources/input/ を候補として列挙
     default_input_base = os.path.join(os.path.dirname(__file__), '..', 'resources', 'input')
     default_input_base = os.path.normpath(default_input_base)
+    if not os.path.isdir(default_input_base):
+        os.makedirs(default_input_base, exist_ok=True)
+        print(f'  ※ inputフォルダを作成しました: {default_input_base}')
+        print()
+        print('  PLATEAUからダウンロードして解凍したデータをそのままinputに移動して、再実行してください。')
+        print('  （再実行のためにこの処理を中止する場合は Ctrl + C）')
+        print('  またはデータの存在するフルパスを入力してください。')
     input_candidates = []
     if os.path.isdir(default_input_base):
         input_candidates = sorted(
@@ -394,14 +401,15 @@ def interactive_mode():
             if os.path.isdir(os.path.join(default_input_base, d))
         )
 
+    print('  利用可能なデータセット:')
     if input_candidates:
-        print('  利用可能なデータセット:')
         for i, name in enumerate(input_candidates, 1):
             print(f'    {i}: {name}')
         print('  番号で選択できます。リスト以外の場所にあるフォルダはパスを直接入力してください。')
     else:
-        print('  データセットのルートフォルダを指定します。')
-        print('  例: ../resources/input/13209_machida-shi_pref_2023_citygml_2_op')
+        print('    ※ inputフォルダにデータがありません')
+        print('  番号で選択できません。inputフォルダにデータを移動するか、フルパスを直接入力してください。')
+        print('  （再実行のためにこの処理を中止する場合は Ctrl + C）')
 
     while True:
         val = input('  入力フォルダ: ').strip().strip('"').strip("'")
