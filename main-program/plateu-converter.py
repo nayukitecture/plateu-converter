@@ -41,80 +41,70 @@ NS = {
 }
 
 # タイプ別設定
-# ns_prefix : GML 名前空間プレフィックス（フォルダ名と異なる場合に指定）
-# root_tags : GML 内のルート要素タグ名（リスト）
-# lod1_tag  : LOD1 ジオメトリを持つタグ名
-# lod2_tag  : LOD2 ジオメトリを持つタグ名（None の場合は lod1 で代替）
+# ns_prefix      : GML 名前空間プレフィックス（フォルダ名と異なる場合に指定）
+# root_tags      : GML 内のルート要素タグ名（リスト）
+# lod_tag_suffix : LOD タグの末尾文字列。lod{N}{suffix} の形でタグを構成する
+#                  例: 'MultiSurface' → lod1MultiSurface, lod2MultiSurface, ...
+#                      'Geometry'    → lod1Geometry, lod2Geometry, ...
+#                  bldg / ubld は専用パーサーを使用するため省略
 TYPE_CONFIG = {
     'bldg': {
         'root_tags': ['Building'],
-        'lod1_tag':  'lod1Solid',         # Solid 形式（専用パーサー使用）
-        'lod2_tag':  'boundedBy',          # boundedBy 形式（専用パーサー使用）
+        # 専用パーサー使用: lod1Solid（LOD1）/ boundedBy+lod2MultiSurface（LOD2）
     },
     'tran': {
         'root_tags': ['Road', 'Railway', 'Track', 'Square'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  'lod2MultiSurface',
+        'lod_tag_suffix': 'MultiSurface',
     },
     'luse': {
         'root_tags': ['LandUse'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'MultiSurface',
     },
     'veg': {
         'root_tags': ['PlantCover', 'SolitaryVegetationObject'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  'lod2MultiSurface',
+        'lod_tag_suffix': 'MultiSurface',
     },
     'frn': {
         'root_tags': ['CityFurniture'],
-        'lod1_tag':  'lod1Geometry',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'Geometry',
     },
     'brid': {
         'root_tags': ['Bridge'],
-        'lod1_tag':  'lod2MultiSurface',   # LOD1 データなし、LOD2 で代替
-        'lod2_tag':  'lod2MultiSurface',
+        'lod_tag_suffix': 'MultiSurface',
     },
     # fld / htd / tnm は WaterBody 名前空間を使用（フォルダ名と異なる）
     'fld': {
         'ns_prefix': 'wtr',
         'root_tags': ['WaterBody'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'MultiSurface',
     },
     'htd': {
         'ns_prefix': 'wtr',
         'root_tags': ['WaterBody'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'MultiSurface',
     },
     'tnm': {
         'ns_prefix': 'wtr',
         'root_tags': ['WaterBody'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'MultiSurface',
     },
     # lsld / urf は URF 拡張名前空間を使用
     'lsld': {
         'ns_prefix': 'urf',
         'root_tags': ['SedimentDisasterProneArea'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'MultiSurface',
     },
     'urf': {
         'ns_prefix': 'urf',
         'root_tags': ['AreaClassification', 'FirePreventionDistrict',
                       'HeightControlDistrict', 'UseDistrict'],
-        'lod1_tag':  'lod1MultiSurface',
-        'lod2_tag':  None,
+        'lod_tag_suffix': 'MultiSurface',
     },
     # ubld は URO 拡張名前空間、ジオメトリは bldg:lod1Solid（専用パーサー使用）
     'ubld': {
         'ns_prefix': 'uro',
         'root_tags': ['UndergroundBuilding'],
-        'lod1_tag':  'lod1Solid',
-        'lod2_tag':  None,
+        # 専用パーサー使用: bldg:lod1Solid / bldg:boundedBy+lod2MultiSurface
     },
 }
 
@@ -231,7 +221,7 @@ def parse_gml(gml_path, lod, obj_type='bldg'):
         return [], 0
 
     result = []
-    skipped_lod = 0
+    skipped_lod = {}   # {実際に使用したLOD: 件数}
     ns_prefix = config.get('ns_prefix', obj_type)
 
     for root_tag in config['root_tags']:
@@ -239,25 +229,25 @@ def parse_gml(gml_path, lod, obj_type='bldg'):
             obj_id = element.get('{http://www.opengis.net/gml}id', 'unknown')
 
             if obj_type in ('bldg', 'ubld'):
-                # bldg / ubld は専用パーサー（bldg:lod1Solid / bldg:boundedBy を使用）
-                if lod == 2:
+                # bldg / ubld は専用パーサー（lod1Solid / boundedBy+lod2MultiSurface）
+                # LOD2 以上が指定されたら LOD2 を試み、なければ LOD1 で代替
+                if lod >= 2:
                     polys = get_polygons_lod2(element)
                     if not polys:
                         polys = get_polygons_lod1(element)
-                        skipped_lod += 1
+                        skipped_lod[1] = skipped_lod.get(1, 0) + 1
                 else:
                     polys = get_polygons_lod1(element)
             else:
-                # その他は汎用パーサー
-                lod2_tag = config['lod2_tag']
-                lod1_tag = config['lod1_tag']
-                if lod == 2 and lod2_tag:
-                    polys = get_polygons_generic(element, ns_prefix, lod2_tag)
-                    if not polys:
-                        polys = get_polygons_generic(element, ns_prefix, lod1_tag)
-                        skipped_lod += 1
-                else:
-                    polys = get_polygons_generic(element, ns_prefix, lod1_tag)
+                # 汎用パーサー: 指定 LOD から降順にフォールバック（N → N-1 → ... → 1）
+                suffix = config.get('lod_tag_suffix', 'MultiSurface')
+                polys = []
+                for try_lod in range(lod, 0, -1):
+                    polys = get_polygons_generic(element, ns_prefix, f'lod{try_lod}{suffix}')
+                    if polys:
+                        if try_lod < lod:
+                            skipped_lod[try_lod] = skipped_lod.get(try_lod, 0) + 1
+                        break
 
             if polys:
                 result.append((obj_id, polys))
@@ -347,6 +337,41 @@ def find_udx_dir(input_base):
     return input_base
 
 
+def detect_available_lods(input_dir, obj_type):
+    """
+    GMLファイルをテキスト走査し、実際に存在するLODレベルのリストを返す。
+    最初のGMLファイルを1行ずつ読み、LOD1〜4 のタグが現れた時点で確定する。
+    全タイプ共通で {ns_prefix}:lod{N} の部分一致で検出する。
+    """
+    config = TYPE_CONFIG.get(obj_type, {})
+    ns_prefix = config.get('ns_prefix', obj_type)
+
+    # LOD番号 → 検索文字列（部分一致）
+    search_tags = {n: f'{ns_prefix}:lod{n}' for n in [1, 2, 3, 4]}
+
+    gml_files = sorted(f for f in os.listdir(input_dir) if f.endswith('.gml'))
+    if not gml_files:
+        return [1]
+
+    sample_path = os.path.join(input_dir, gml_files[0])
+    found = set()
+    remaining = dict(search_tags)
+
+    try:
+        with open(sample_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                for lod_num in list(remaining):
+                    if remaining[lod_num] in line:
+                        found.add(lod_num)
+                        del remaining[lod_num]
+                if not remaining:
+                    break
+    except Exception:
+        return [1]
+
+    return sorted(found) if found else [1]
+
+
 def interactive_mode():
     """引数なしで起動したときの一問一答入力モード"""
     print('=' * 44)
@@ -358,33 +383,48 @@ def interactive_mode():
 
     # ── 1. 入力フォルダ (-i) ──────────────────────────
     print('【入力フォルダ (-i)】')
-    print('  データセットのルートフォルダを指定します。')
-    print('  例: ../resources/input/13209_machida-shi_pref_2023_citygml_2_op')
+
+    # スクリプトの隣の resources/input/ を候補として列挙
+    default_input_base = os.path.join(os.path.dirname(__file__), '..', 'resources', 'input')
+    default_input_base = os.path.normpath(default_input_base)
+    input_candidates = []
+    if os.path.isdir(default_input_base):
+        input_candidates = sorted(
+            d for d in os.listdir(default_input_base)
+            if os.path.isdir(os.path.join(default_input_base, d))
+        )
+
+    if input_candidates:
+        print('  利用可能なデータセット:')
+        for i, name in enumerate(input_candidates, 1):
+            print(f'    {i}: {name}')
+        print('  番号で選択できます。リスト以外の場所にあるフォルダはパスを直接入力してください。')
+    else:
+        print('  データセットのルートフォルダを指定します。')
+        print('  例: ../resources/input/13209_machida-shi_pref_2023_citygml_2_op')
+
     while True:
         val = input('  入力フォルダ: ').strip().strip('"').strip("'")
-        if val and os.path.isdir(val):
+        if not val:
+            print('  ※ 番号またはフォルダパスを入力してください。')
+            continue
+        # 番号入力の場合
+        if val.isdigit() and input_candidates:
+            idx = int(val) - 1
+            if 0 <= idx < len(input_candidates):
+                args.input = os.path.join(default_input_base, input_candidates[idx])
+                break
+            print(f'  ※ 1〜{len(input_candidates)} の番号を入力してください。')
+            continue
+        # フルパス入力の場合
+        if os.path.isdir(val):
             args.input = val
             break
         print('  ※ フォルダが見つかりません。再入力してください。')
 
-    # ── 2. LOD レベル (-lod) ─────────────────────────
-    print('\n【LOD レベル (-lod)】')
-    print('  1: ボックス形状（全データに存在、処理が速い）')
-    print('  2: 屋根形状あり（整備状況はデータによって異なる）')
-    while True:
-        val = input('  LOD [1/2] (既定: 1): ').strip()
-        if val == '' or val == '1':
-            args.lod = 1
-            break
-        elif val == '2':
-            args.lod = 2
-            break
-        print('  ※ 1 か 2 を入力してください。')
-
-    # ── 3. ブロック番号 (-b) ─────────────────────────
     udx_dir = find_udx_dir(args.input)
 
-    # 検証用にブロック番号を収集（表示はしない）
+    # ── 2. ブロック番号 (-b) ─────────────────────────
     available_blocks = set()
     if os.path.isdir(udx_dir):
         for type_name in os.listdir(udx_dir):
@@ -412,8 +452,7 @@ def interactive_mode():
         args.meshes = entered
         break
 
-    # ── 4. オブジェクト種別 (-t) ──────────────────────
-    # udx 以下で GML ファイルが存在し TYPE_CONFIG に登録されているタイプを列挙
+    # ── 3. オブジェクト種別 (-t) ──────────────────────
     available_types = []
     if os.path.isdir(udx_dir):
         for type_name in sorted(os.listdir(udx_dir)):
@@ -445,6 +484,41 @@ def interactive_mode():
         args.types = entered
         break
 
+    # ── 4. LOD レベル（タイプ別） ─────────────────────
+    args.lod_map = {}
+    args.lod = 1  # CLI 互換用デフォルト値
+
+    for obj_type in args.types:
+        type_dir = None
+        for candidate in [
+            os.path.join(udx_dir, obj_type),
+            os.path.join(args.input, obj_type),
+        ]:
+            if os.path.isdir(candidate) and any(f.endswith('.gml') for f in os.listdir(candidate)):
+                type_dir = candidate
+                break
+
+        if type_dir is None:
+            args.lod_map[obj_type] = 1
+            continue
+
+        available_lods = detect_available_lods(type_dir, obj_type)
+        desc = TYPE_DESCRIPTIONS.get(obj_type, obj_type)
+        lod_str = '/'.join(map(str, available_lods))
+        default_lod = available_lods[-1]  # 最高LODをデフォルトに
+
+        print(f'\n【LOD レベル ({obj_type}: {desc})】')
+        print(f'  利用可能なLOD: {lod_str}')
+        while True:
+            val = input(f'  LOD [{lod_str}] (既定: {default_lod}): ').strip()
+            if val == '':
+                args.lod_map[obj_type] = default_lod
+                break
+            elif val.isdigit() and int(val) in available_lods:
+                args.lod_map[obj_type] = int(val)
+                break
+            print(f'  ※ {lod_str} のいずれかを入力してください。')
+
     # ── 5. 出力フォルダ名 (-o) ────────────────────────
     print('\n【出力フォルダ名 (-o)】')
     print('  resources/output/ 内に作成するサブフォルダ名を指定します。')
@@ -474,8 +548,9 @@ def main():
   python plateu-converter.py -lod 2 -i ../resources/input/14100.../
 """)
 
-    parser.add_argument('-lod', type=int, choices=[1, 2], default=1,
-                        help='LOD レベル (デフォルト: 1)')
+    parser.add_argument('-lod', type=int, nargs='+', choices=[1, 2, 3], default=[1],
+                        metavar='LOD',
+                        help='LOD レベル（デフォルト: 1）。-t と同数指定するとタイプ別に適用。例: -t bldg frn -lod 2 3')
     parser.add_argument('-b', nargs='+', metavar='BLOCK', dest='meshes',
                         help='変換するブロック番号（複数指定可）。省略時は全ブロック。')
     parser.add_argument('-i', metavar='DIR', dest='input', required=True,
@@ -489,6 +564,19 @@ def main():
         args = interactive_mode()
     else:
         args = parser.parse_args()
+        lod_values = args.lod  # list of ints
+        args.lod = lod_values[0]  # デフォルト（後方互換）
+        if len(lod_values) == 1:
+            # 全タイプに同じ LOD を適用
+            args.lod_map = {}
+        elif len(lod_values) == len(args.types):
+            # タイプ別 LOD（位置対応）
+            args.lod_map = dict(zip(args.types, lod_values))
+        else:
+            parser.error(
+                f'-lod の値の数（{len(lod_values)}）が -t の種別数（{len(args.types)}）と一致しません。'
+                f'  例: -t bldg frn -lod 2 3'
+            )
 
     # 出力先フォルダを決定（-o 省略時は日時フォルダを自動生成）
     base_output = os.path.join(os.path.dirname(__file__), '..', 'resources', 'output')
@@ -526,9 +614,10 @@ def main():
             target = all_gml
             not_found = []
 
+        lod = args.lod_map.get(obj_type, args.lod)
         unit = '棟' if obj_type == 'bldg' else '件'
 
-        print(f'\n======= {obj_type} / LOD{args.lod} / {len(target)} ブロック =======')
+        print(f'\n======= {obj_type} / LOD{lod} / {len(target)} ブロック =======')
 
         if not_found:
             print(f'  [WARNING] 見つからないブロック番号: {not_found}')
@@ -542,8 +631,12 @@ def main():
         for gml_file in target:
             mesh_code = gml_file.split('_')[0]
             gml_path  = os.path.join(input_dir, gml_file)
-            buildings, skipped = parse_gml(gml_path, args.lod, obj_type)
-            extra = f' (内 LOD1 で代替: {skipped} {unit})' if skipped else ''
+            buildings, skipped = parse_gml(gml_path, lod, obj_type)
+            if skipped:
+                parts = [f'LOD{l}代替: {c}' for l, c in sorted(skipped.items(), reverse=True)]
+                extra = f'  （{" / ".join(parts)}）'
+            else:
+                extra = ''
             print(f'  {gml_file}: {len(buildings)} {unit}{extra}')
             mesh_buildings.append((mesh_code, buildings, skipped))
 
@@ -556,20 +649,25 @@ def main():
         # 出力ファイル名: {-o}_{LOD}_{type}_{ブロック番号...}.obj
         mesh_codes = [mc for mc, _, _ in mesh_buildings]
         prefix = f'{args.output}_' if args.output else ''
-        out_name = f'{prefix}LOD{args.lod}_{obj_type}_{"_".join(mesh_codes)}.obj'
+        out_name = f'{prefix}LOD{lod}_{obj_type}_{"_".join(mesh_codes)}.obj'
         out_path = os.path.join(output_dir, out_name)
         label = ' + '.join(mesh_codes)
 
-        total = write_obj_file(out_path, [(mc, b) for mc, b, _ in mesh_buildings], args.lod, label, obj_type)
+        total = write_obj_file(out_path, [(mc, b) for mc, b, _ in mesh_buildings], lod, label, obj_type)
         output_paths.append(out_path)
 
-        total_skipped = sum(s for _, _, s in mesh_buildings)
-        total_lod2 = total - total_skipped if args.lod == 2 else 0
+        # 全ブロックの skipped_lod 辞書を集約
+        total_skipped_map = {}
+        for _, _, s in mesh_buildings:
+            for actual_lod, count in s.items():
+                total_skipped_map[actual_lod] = total_skipped_map.get(actual_lod, 0) + count
+        total_skipped = sum(total_skipped_map.values())
 
         print(f'  総数     : {total} {unit}')
-        if args.lod == 2:
-            print(f'  LOD2     : {total_lod2} {unit}')
-            print(f'  LOD1代替 : {total_skipped} {unit}（LOD2データなし）')
+        if lod > 1:
+            print(f'  LOD{lod}     : {total - total_skipped} {unit}')
+            for actual_lod in sorted(total_skipped_map, reverse=True):
+                print(f'  LOD{actual_lod}代替  : {total_skipped_map[actual_lod]} {unit}')
         print(f'========================================')
 
     if output_paths:
