@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 
+# PyInstaller
+build/
+dist/
+*.spec
+
 # Claude Code
 .claude/
 
