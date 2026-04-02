@@ -437,7 +437,10 @@ def interactive_mode():
     print('\n【ブロック番号 (-b)】')
     print('  変換対象のブロック番号を入力します（1つ以上必須）。')
     print('  複数変換する場合はスペース区切りで入力します。')
-    print('  ※ ブロック番号はデータセットフォルダ内の GML ファイル名の先頭数字です。')
+    print('  ※ ブロック番号は GML ファイル名の先頭8桁の数字です（国土地理院の地図メッシュ番号）。')
+    if available_blocks:
+        examples = ' '.join(sorted(available_blocks)[:3])
+        print(f'  例: {examples}')
     while True:
         val = input('  ブロック番号: ').strip()
         if not val:
