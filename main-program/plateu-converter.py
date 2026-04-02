@@ -18,12 +18,51 @@ PLATEAU CityGML → OBJ 変換ツール
 """
 
 import argparse
+import colorsys
 import datetime
 import math
 import os
-import re
 import sys
 import xml.etree.ElementTree as ET
+
+# Windows ターミナルで ANSI カラーを有効化
+if sys.platform == 'win32':
+    os.system('')
+
+# ---------------------------------------------------------------
+# ターミナルカラーヘルパー
+# ---------------------------------------------------------------
+def _h(text):
+    """見出し: 太字シアン"""
+    return f'\033[1;36m{text}\033[0m'
+
+def _ok(text):
+    """完了・成功: 太字緑"""
+    return f'\033[1;32m{text}\033[0m'
+
+def _warn(text):
+    """警告・注意: 太字黄"""
+    return f'\033[1;33m{text}\033[0m'
+
+def _err(text):
+    """エラー: 太字赤"""
+    return f'\033[1;31m{text}\033[0m'
+
+def _bold(text):
+    """太字のみ"""
+    return f'\033[1m{text}\033[0m'
+
+def _brand(text):
+    """ブランド署名: RGB(62, 134, 141)"""
+    return f'\033[38;2;62;134;141m{text}\033[0m'
+
+def _brand_url(text):
+    """ブランドURL: RGB(62, 134, 141) + 下線"""
+    return f'\033[38;2;62;134;141m\033[4m{text}\033[0m'
+
+def _cmd(text):
+    """再実行コマンド表示: オレンジ RGB(255, 140, 0)"""
+    return f'\033[38;2;255;140;0m{text}\033[0m'
 
 # CityGML 名前空間
 NS = {
@@ -38,6 +77,7 @@ NS = {
     'urf':  'https://www.geospatial.jp/iur/urf/3.1',
     'uro':  'https://www.geospatial.jp/iur/uro/3.1',
     'gml':  'http://www.opengis.net/gml',
+    'app':  'http://www.opengis.net/citygml/appearance/2.0',
 }
 
 # タイプ別設定
@@ -115,6 +155,45 @@ _REF_LAT_RAD = math.radians(35.0)
 _MM_PER_DEG_LAT = 111320.0 * 1000                            # 緯度 1° あたりの距離 (mm)
 _MM_PER_DEG_LON = 111320.0 * 1000 * math.cos(_REF_LAT_RAD)  # 経度 1° あたりの距離 (mm)
 
+# ---------------------------------------------------------------
+# マテリアル: 部位別カラー (-m 1)
+# ---------------------------------------------------------------
+
+# 既知サーフェス種別への色割り当て（RGB 0-1、白・黒を使わない）
+SURFACE_COLORS = {
+    'RoofSurface':         (0.85, 0.35, 0.15),  # テラコッタ（赤橙）
+    'WallSurface':         (0.35, 0.65, 0.85),  # コーンフラワーブルー
+    'GroundSurface':       (0.45, 0.70, 0.30),  # オリーブグリーン
+    'OuterCeilingSurface': (0.20, 0.75, 0.65),  # ティール
+    'OuterFloorSurface':   (0.65, 0.30, 0.80),  # パープル
+    'ClosureSurface':      (0.65, 0.85, 0.20),  # ライムグリーン
+    'InteriorWallSurface': (0.90, 0.50, 0.40),  # サーモン
+    'FloorSurface':        (0.80, 0.60, 0.20),  # アンバー
+    'CeilingSurface':      (0.70, 0.55, 0.90),  # ラベンダー
+    'Door':                (0.20, 0.85, 0.85),  # シアン
+    'Window':              (0.90, 0.78, 0.20),  # オーカー
+}
+_SURFACE_COLOR_CACHE = {}
+_GOLDEN_RATIO = 0.618033988749895
+
+
+def get_surface_color(surface_type):
+    """
+    既知種別は SURFACE_COLORS から取得。
+    未知種別は黄金比 HSV で自動生成（白・黒を避ける）。
+    None の場合はデフォルト色（ライトタン）を返す。
+    """
+    if surface_type is None:
+        return (0.75, 0.70, 0.60)  # デフォルト: ライトタン
+    if surface_type in SURFACE_COLORS:
+        return SURFACE_COLORS[surface_type]
+    if surface_type not in _SURFACE_COLOR_CACHE:
+        n = len(_SURFACE_COLOR_CACHE)
+        h = (0.5 + n * _GOLDEN_RATIO) % 1.0
+        r, g, b = colorsys.hsv_to_rgb(h, 0.68, 0.72)
+        _SURFACE_COLOR_CACHE[surface_type] = (r, g, b)
+    return _SURFACE_COLOR_CACHE[surface_type]
+
 
 def latlon_to_m(lat, lon, height):
     """
@@ -156,6 +235,7 @@ def ring_to_pts(polygon_el):
 
 # ---------------------------------------------------------------
 # LOD ごとのポリゴン取得
+# 各ポリゴンは (pts, surface_type, poly_id) のタプルで返す
 # ---------------------------------------------------------------
 
 def get_polygons_lod1(building):
@@ -167,7 +247,8 @@ def get_polygons_lod1(building):
     for poly in lod1.findall('.//gml:Polygon', NS):
         pts = ring_to_pts(poly)
         if len(pts) >= 3:
-            polys.append(pts)
+            poly_id = poly.get('{http://www.opengis.net/gml}id', '')
+            polys.append((pts, None, poly_id))
     return polys
 
 
@@ -175,11 +256,18 @@ def get_polygons_lod2(building):
     """bldg:boundedBy 以下の lod2MultiSurface からポリゴンを取得する（bldg 専用）"""
     polys = []
     for bounded in building.findall('bldg:boundedBy', NS):
+        # boundedBy の最初の子要素タグがサーフェス種別
+        surface_type = None
+        for child in bounded:
+            local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            surface_type = local
+            break
         for ms in bounded.findall('.//bldg:lod2MultiSurface', NS):
             for poly in ms.findall('.//gml:Polygon', NS):
                 pts = ring_to_pts(poly)
                 if len(pts) >= 3:
-                    polys.append(pts)
+                    poly_id = poly.get('{http://www.opengis.net/gml}id', '')
+                    polys.append((pts, surface_type, poly_id))
     return polys
 
 
@@ -194,31 +282,71 @@ def get_polygons_generic(element, ns_prefix, lod_tag):
         for poly in lod_el.findall('.//gml:Polygon', NS):
             pts = ring_to_pts(poly)
             if len(pts) >= 3:
-                polys.append(pts)
+                poly_id = poly.get('{http://www.opengis.net/gml}id', '')
+                polys.append((pts, None, poly_id))
     return polys
+
+# ---------------------------------------------------------------
+# テクスチャ情報パース (-m 2)
+# ---------------------------------------------------------------
+
+def parse_appearance(root, gml_dir):
+    """
+    GML ルートの app:Appearance からテクスチャマップを構築する。
+    戻り値: {poly_id: (abs_image_path, [(u, v), ...])}
+    UV リストはリングの閉じ頂点を含む場合があるため、
+    頂点数への切り取りは write_obj_file 側で行う。
+    """
+    tex_map = {}
+    for tex in root.findall('.//app:ParameterizedTexture', NS):
+        image_uri_el = tex.find('app:imageURI', NS)
+        if image_uri_el is None or not image_uri_el.text:
+            continue
+        abs_image = os.path.normpath(
+            os.path.join(gml_dir, image_uri_el.text.strip())
+        )
+        for target in tex.findall('app:target', NS):
+            poly_ref = target.get('uri', '')
+            if not poly_ref.startswith('#'):
+                continue
+            poly_id = poly_ref[1:]
+            tc = target.find('.//app:textureCoordinates', NS)
+            if tc is None or not tc.text:
+                continue
+            vals = list(map(float, tc.text.strip().split()))
+            uvs = [(vals[i], vals[i + 1]) for i in range(0, len(vals) - 1, 2)]
+            tex_map[poly_id] = (abs_image, uvs)
+    return tex_map
 
 # ---------------------------------------------------------------
 # GML ファイルから建物データを取得
 # ---------------------------------------------------------------
 
-def parse_gml(gml_path, lod, obj_type='bldg'):
+def parse_gml(gml_path, lod, obj_type='bldg', mat_mode=1):
     """
     GML ファイルをパースし、オブジェクトごとの (obj_id, polygons) リストを返す。
-    obj_type に応じて TYPE_CONFIG を参照し、適切なタグからポリゴンを取得する。
-    戻り値: (objects, skipped_lod_count)
+    polygons の各要素は (pts, surface_type, poly_id) のタプル。
+    戻り値: (objects, skipped_lod_count, tex_map)
       objects = [(obj_id, polys), ...]
+      tex_map = {poly_id: (abs_image_path, [(u,v),...])}  ← mat_mode=3 のみ
     """
     try:
         tree = ET.parse(gml_path)
     except ET.ParseError as e:
-        print(f'  [ERROR] XML 解析失敗: {gml_path}\n         {e}')
-        return [], 0
+        print(_err(f'  [ERROR] XML 解析失敗: {gml_path}\n         {e}'))
+        return [], 0, {}
 
     root = tree.getroot()
     config = TYPE_CONFIG.get(obj_type)
     if config is None:
-        print(f'  [ERROR] 未対応のタイプ: {obj_type}')
-        return [], 0
+        print(_err(f'  [ERROR] 未対応のタイプ: {obj_type}'))
+        return [], 0, {}
+
+    # テクスチャ情報を取得（mat_mode=3 のみ）
+    tex_map = {}
+    if mat_mode == 3:
+        gml_dir = os.path.dirname(gml_path)
+        tex_map = parse_appearance(root, gml_dir)
 
     result = []
     skipped_lod = {}   # {実際に使用したLOD: 件数}
@@ -252,27 +380,73 @@ def parse_gml(gml_path, lod, obj_type='bldg'):
             if polys:
                 result.append((obj_id, polys))
 
-    return result, skipped_lod
+    return result, skipped_lod, tex_map
+
+
+# ---------------------------------------------------------------
+# MTL ファイルに書き出す
+# ---------------------------------------------------------------
+
+def write_mtl_file(mtl_path, mat_mode, surface_types_used=None, textures_used=None):
+    """
+    MTL ファイルを書き出す。
+    mat_mode=2: surface_types_used (set) から部位別カラーを生成
+    mat_mode=3: textures_used ({mat_name: abs_img_path}) からテクスチャ参照を生成
+    いずれのモードも、マテリアルのない面向けに mat_default を含む。
+    """
+    with open(mtl_path, 'w', encoding='utf-8') as f:
+        if mat_mode == 2:
+            f.write('# PLATEAU CityGML → OBJ  部位別カラー\n\n')
+        else:
+            f.write('# PLATEAU CityGML → OBJ  フォトテクスチャ\n\n')
+
+        # デフォルトマテリアル（テクスチャなし面 / LOD1代替面）
+        r, g, b = get_surface_color(None)
+        f.write('newmtl mat_default\n')
+        f.write(f'Kd {r:.4f} {g:.4f} {b:.4f}\n\n')
+
+        if mat_mode == 2:
+            for st in sorted(st for st in surface_types_used if st is not None):
+                r, g, b = get_surface_color(st)
+                f.write(f'newmtl mat_{st}\n')
+                f.write(f'Kd {r:.4f} {g:.4f} {b:.4f}\n\n')
+
+        elif mat_mode == 3:
+            for mat_name, img_path in sorted(textures_used.items()):
+                f.write(f'newmtl {mat_name}\n')
+                f.write(f'map_Kd {img_path.replace(os.sep, "/")}\n\n')
 
 
 # ---------------------------------------------------------------
 # OBJ ファイルに書き出す
 # ---------------------------------------------------------------
 
-def write_obj_file(out_path, mesh_buildings, lod, label, obj_type):
+def write_obj_file(out_path, mesh_buildings, lod, label, obj_type,
+                   mat_mode=1, tex_map=None):
     """
     mesh_buildings = [(mesh_code, [(bldg_id, polys), ...]), ...]
+    polys の各要素は (pts, surface_type, poly_id) のタプル。
     を 1 つの OBJ ファイルに書き出す。
     各建物は "o 建物ID" で区切る（Rhino で Explode 可能）。
     書き出した総建物数を返す。
     """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    mtl_name = os.path.splitext(os.path.basename(out_path))[0] + '.mtl'
+    mtl_path = os.path.join(os.path.dirname(out_path), mtl_name)
+
     total = 0
-    vertex_offset = 1  # OBJ の頂点インデックスはファイル全体で通し番号
+    vertex_offset = 1   # OBJ の頂点インデックスはファイル全体で通し番号
+    uv_offset = 1       # UV インデックスも同様（mode 2）
+
+    surface_types_used = set()          # mode 1 用: MTL に書く種別を収集
+    textures_used = {}                   # mode 2 用: {mat_name: abs_img_path}
 
     with open(out_path, 'w', encoding='utf-8') as f:
+        if mat_mode > 1:
+            f.write(f'mtllib {mtl_name}\n')
         f.write(f'# PLATEAU CityGML → OBJ  {label}  LOD{lod}\n')
-        f.write(f'# 座標系: 等距離円筒図法 (基準緯度 35°)  単位: m\n')
+        f.write(f'# 座標系: 等距離円筒図法 (基準緯度 35°)  単位: mm\n')
         f.write(f'#   X = 東 (経度方向)  Y = 北 (緯度方向)  Z = 高さ\n\n')
         f.write(f'g {obj_type}\n\n')
 
@@ -281,19 +455,60 @@ def write_obj_file(out_path, mesh_buildings, lod, label, obj_type):
             for bldg_id, polys in buildings:
                 f.write(f'o {bldg_id}\n')
 
-                all_verts = [v for poly in polys for v in poly]
+                # 頂点を出力
+                all_verts = [v for pts, _, _ in polys for v in pts]
                 for v in all_verts:
                     f.write(f'v {v[0]:.3f} {v[1]:.3f} {v[2]:.3f}\n')
 
-                idx = vertex_offset
-                for poly in polys:
-                    face_idx = list(range(idx, idx + len(poly)))
-                    f.write('f ' + ' '.join(map(str, face_idx)) + '\n')
-                    idx += len(poly)
+                # フェイスを出力
+                v_idx = vertex_offset
+                prev_mat = None  # usemtl の重複出力を避ける
+                for pts, surface_type, poly_id in polys:
+                    n = len(pts)
+
+                    if mat_mode == 2:
+                        mat_name = f'mat_{surface_type}' if surface_type else 'mat_default'
+                        surface_types_used.add(surface_type)
+                        if mat_name != prev_mat:
+                            f.write(f'usemtl {mat_name}\n')
+                            prev_mat = mat_name
+                        face_idx = list(range(v_idx, v_idx + n))
+                        f.write('f ' + ' '.join(map(str, face_idx)) + '\n')
+
+                    elif mat_mode == 3 and tex_map and poly_id in tex_map:
+                        img_path, uvs = tex_map[poly_id]
+                        mat_stem = os.path.splitext(os.path.basename(img_path))[0]
+                        mat_name = f'mat_img_{mat_stem}'
+                        textures_used[mat_name] = img_path
+                        if mat_name != prev_mat:
+                            f.write(f'usemtl {mat_name}\n')
+                            prev_mat = mat_name
+                        # UV は閉じ頂点を含む場合があるため頂点数で切る
+                        for u, v in uvs[:n]:
+                            f.write(f'vt {u:.6f} {v:.6f}\n')
+                        face_parts = [f'{v_idx + i}/{uv_offset + i}' for i in range(n)]
+                        f.write('f ' + ' '.join(face_parts) + '\n')
+                        uv_offset += n
+
+                    else:
+                        # mode 0、または mode 2 でテクスチャのないポリゴン
+                        if mat_mode == 3 and 'mat_default' != prev_mat:
+                            f.write('usemtl mat_default\n')
+                            prev_mat = 'mat_default'
+                        face_idx = list(range(v_idx, v_idx + n))
+                        f.write('f ' + ' '.join(map(str, face_idx)) + '\n')
+
+                    v_idx += n
 
                 f.write('\n')
                 vertex_offset += len(all_verts)
                 total += 1
+
+    # MTL ファイルを生成
+    if mat_mode == 2:
+        write_mtl_file(mtl_path, 2, surface_types_used=surface_types_used)
+    elif mat_mode == 3:
+        write_mtl_file(mtl_path, 3, textures_used=textures_used)
 
     return total
 
@@ -374,25 +589,25 @@ def detect_available_lods(input_dir, obj_type):
 
 def interactive_mode():
     """引数なしで起動したときの一問一答入力モード"""
-    print('=' * 44)
-    print('  PLATEAU CityGML → OBJ')
-    print('　変換ツールを開始します。')
-    print('=' * 44)
+    print(_ok('=' * 44))
+    print(_ok('  PLATEAU CityGML → OBJ'))
+    print(_ok('　変換ツールを開始します。'))
+    print(_ok('=' * 44))
 
     args = argparse.Namespace()
 
     # ── 1. 入力フォルダ (-i) ──────────────────────────
-    print('【入力フォルダ (-i)】')
+    print(_h('【入力フォルダ (-i)】'))
 
     # スクリプトの隣の resources/input/ を候補として列挙
     default_input_base = os.path.join(os.path.dirname(__file__), '..', 'resources', 'input')
     default_input_base = os.path.normpath(default_input_base)
     if not os.path.isdir(default_input_base):
         os.makedirs(default_input_base, exist_ok=True)
-        print(f'  ※ inputフォルダを作成しました: {default_input_base}')
+        print(_warn(f'  ※ inputフォルダを作成しました: {default_input_base}'))
         print()
         print('  PLATEAUからダウンロードして解凍したデータをそのままinputに移動して、再実行してください。')
-        print('  （再実行のためにこの処理を中止する場合は Ctrl + C）')
+        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C）'))
         print('  またはデータの存在するフルパスを入力してください。')
     input_candidates = []
     if os.path.isdir(default_input_base):
@@ -407,14 +622,14 @@ def interactive_mode():
             print(f'    {i}: {name}')
         print('  番号で選択できます。リスト以外の場所にあるフォルダはパスを直接入力してください。')
     else:
-        print('    ※ inputフォルダにデータがありません')
+        print(_warn('    ※ inputフォルダにデータがありません'))
         print('  番号で選択できません。inputフォルダにデータを移動するか、フルパスを直接入力してください。')
-        print('  （再実行のためにこの処理を中止する場合は Ctrl + C）')
+        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C）'))
 
     while True:
         val = input('  入力フォルダ: ').strip().strip('"').strip("'")
         if not val:
-            print('  ※ 番号またはフォルダパスを入力してください。')
+            print(_warn('  ※ 番号またはフォルダパスを入力してください。'))
             continue
         # 番号入力の場合
         if val.isdigit() and input_candidates:
@@ -422,13 +637,13 @@ def interactive_mode():
             if 0 <= idx < len(input_candidates):
                 args.input = os.path.join(default_input_base, input_candidates[idx])
                 break
-            print(f'  ※ 1〜{len(input_candidates)} の番号を入力してください。')
+            print(_warn(f'  ※ 1〜{len(input_candidates)} の番号を入力してください。'))
             continue
         # フルパス入力の場合
         if os.path.isdir(val):
             args.input = val
             break
-        print('  ※ フォルダが見つかりません。再入力してください。')
+        print(_warn('  ※ フォルダが見つかりません。再入力してください。'))
 
     udx_dir = find_udx_dir(args.input)
 
@@ -442,7 +657,7 @@ def interactive_mode():
                     if f.endswith('.gml'):
                         available_blocks.add(f.split('_')[0])
 
-    print('\n【ブロック番号 (-b)】')
+    print(_h('\n【ブロック番号 (-b)】'))
     print('  変換対象のブロック番号を入力します（1つ以上必須）。')
     print('  複数変換する場合はスペース区切りで入力します。')
     print('  ※ ブロック番号は GML ファイル名の先頭の数字です（国土地理院の地図メッシュ番号）。')
@@ -452,13 +667,13 @@ def interactive_mode():
     while True:
         val = input('  ブロック番号: ').strip()
         if not val:
-            print('  ※ ブロック番号を1つ以上入力してください。')
+            print(_warn('  ※ ブロック番号を1つ以上入力してください。'))
             continue
         entered = val.split()
         if available_blocks:
             invalid = [b for b in entered if b not in available_blocks]
             if invalid:
-                print(f'  ※ 以下のブロック番号は存在しません: {" ".join(invalid)}')
+                print(_warn(f'  ※ 次のブロック番号は存在しません: {" ".join(invalid)}'))
                 continue
         args.meshes = entered
         break
@@ -473,7 +688,7 @@ def interactive_mode():
                     and any(f.endswith('.gml') for f in os.listdir(type_path))):
                 available_types.append(type_name)
 
-    print('\n【オブジェクト種別 (-t)】')
+    print(_h('\n【オブジェクト種別 (-t)】'))
     print('  変換するオブジェクト種別を入力します（1つ以上必須）。')
     print('  複数変換する場合はスペース区切りで入力します。')
     if available_types:
@@ -484,13 +699,13 @@ def interactive_mode():
     while True:
         val = input('  種別: ').strip()
         if not val:
-            print('  ※ 種別を1つ以上入力してください。')
+            print(_warn('  ※ 種別を1つ以上入力してください。'))
             continue
         entered = val.split()
         if available_types:
             invalid = [t for t in entered if t not in available_types]
             if invalid:
-                print(f'  ※ 以下の種別はこのデータセットに存在しません: {" ".join(invalid)}')
+                print(_warn(f'  ※ 次の種別はこのデータセットに存在しません: {" ".join(invalid)}'))
                 continue
         args.types = entered
         break
@@ -518,7 +733,7 @@ def interactive_mode():
         lod_str = '/'.join(map(str, available_lods))
         default_lod = available_lods[-1]  # 最高LODをデフォルトに
 
-        print(f'\n【LOD レベル ({obj_type}: {desc})】')
+        print(_h(f'\n【LOD レベル ({obj_type}: {desc})】'))
         print(f'  利用可能なLOD: {lod_str}')
         while True:
             val = input(f'  LOD [{lod_str}] (既定: {default_lod}): ').strip()
@@ -528,16 +743,51 @@ def interactive_mode():
             elif val.isdigit() and int(val) in available_lods:
                 args.lod_map[obj_type] = int(val)
                 break
-            print(f'  ※ {lod_str} のいずれかを入力してください。')
+            print(_warn(f'  ※ {lod_str} のいずれかを入力してください。'))
 
-    # ── 5. 出力フォルダ名 (-o) ────────────────────────
-    print('\n【出力フォルダ名 (-o)】')
+    # ── 5. マテリアルモード (-m) ──────────────────────
+    print(_h('\n【マテリアルモード (-m)】'))
+    print('  1: なし          マテリアルなし（最も軽量）')
+    print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
+    print(f'  3: フォトテクスチャ  撮影写真を貼り付け{_warn("（※ データ量が大幅に増加）")}')
+    while True:
+        val = input('  マテリアルモード [1/2/3] (既定: 1): ').strip()
+        if val in ('', '1'):
+            args.mat_mode = 1
+            break
+        elif val == '2':
+            args.mat_mode = 2
+            break
+        elif val == '3':
+            args.mat_mode = 3
+            break
+        print(_warn('  ※ 1、2、3 のいずれかを入力してください。'))
+
+    # ── 6. 出力フォルダ名 (-o) ────────────────────────
+    print(_h('\n【出力フォルダ名 (-o)】'))
     print('  resources/output/ 内に作成するサブフォルダ名を指定します。')
     print('  省略すると日時フォルダ（yyyymmdd-hhmmss）が自動生成されます。')
     print('  例: machida-station')
     val = input('  出力フォルダ名 (既定: 日時自動): ').strip()
     args.output = val if val else None
 
+    # ── CLI コマンドを表示 ────────────────────────────
+    lod_values = [args.lod_map.get(t, args.lod) for t in args.types]
+    cmd_parts = ['python plateu-converter.py']
+    cmd_parts.append(f'-i "{args.input}"')
+    if args.meshes:
+        cmd_parts.append('-b ' + ' '.join(args.meshes))
+    cmd_parts.append('-t ' + ' '.join(args.types))
+    if len(set(lod_values)) == 1:
+        cmd_parts.append(f'-lod {lod_values[0]}')
+    else:
+        cmd_parts.append('-lod ' + ' '.join(map(str, lod_values)))
+    cmd_parts.append(f'-m {args.mat_mode}')
+    if args.output:
+        cmd_parts.append(f'-o {args.output}')
+
+    print(_cmd('\n【同じ設定で再実行する場合のコマンド】'))
+    print(f'  {_cmd(" ".join(cmd_parts))}')
     print()
     return args
 
@@ -555,8 +805,11 @@ def main():
   # LOD1 で 2 ブロックだけ変換
   python plateu-converter.py -lod 1 -b 53390329 53390338 -i ../resources/input/14100.../
 
-  # LOD2 で全ブロック変換
-  python plateu-converter.py -lod 2 -i ../resources/input/14100.../
+  # LOD2 で部位別カラー付きで変換
+  python plateu-converter.py -lod 2 -m 1 -i ../resources/input/14100.../
+
+  # LOD2 でフォトテクスチャ付きで変換（データ量大）
+  python plateu-converter.py -lod 2 -m 2 -i ../resources/input/14100.../
 """)
 
     parser.add_argument('-lod', type=int, nargs='+', choices=[1, 2, 3], default=[1],
@@ -570,6 +823,8 @@ def main():
                         help='出力サブフォルダ名 (例: -o yokohama → resources/output/yokohama/)')
     parser.add_argument('-t', nargs='+', metavar='TYPE', dest='types', default=['bldg'],
                         help='オブジェクト種別（複数指定可、デフォルト: bldg）  例: bldg brid tran luse veg frn fld htd tnm lsld urf ubld')
+    parser.add_argument('-m', type=int, choices=[1, 2, 3], default=1, dest='mat_mode',
+                        help='マテリアルモード: 1=なし 2=部位別カラー 3=フォトテクスチャ（デフォルト: 1）')
 
     if len(sys.argv) == 1:
         args = interactive_mode()
@@ -596,6 +851,8 @@ def main():
     output_dir = os.path.join(base_output, args.output)
     os.makedirs(output_dir, exist_ok=True)
 
+    mat_mode = args.mat_mode
+
     # タイプごとに処理
     output_paths = []
     for obj_type in args.types:
@@ -613,7 +870,7 @@ def main():
                 input_dir = candidate
                 break
         if input_dir is None:
-            print(f'[SKIP] {obj_type}: データフォルダが見つかりません')
+            print(_warn(f'[SKIP] {obj_type}: データフォルダが見つかりません'))
             continue
 
         all_gml = sorted(f for f in os.listdir(input_dir) if f.endswith('.gml'))
@@ -628,13 +885,14 @@ def main():
         lod = args.lod_map.get(obj_type, args.lod)
         unit = '棟' if obj_type == 'bldg' else '件'
 
-        print(f'\n======= {obj_type} / LOD{lod} / {len(target)} ブロック =======')
+        mat_label = {1: 'なし', 2: '部位別カラー', 3: 'フォトテクスチャ'}[mat_mode]
+        print(_bold(f'\n======= {obj_type} / LOD{lod} / マテリアル: {mat_label} / {len(target)} ブロック ======='))
 
         if not_found:
-            print(f'  [WARNING] 見つからないブロック番号: {not_found}')
+            print(_warn(f'  [WARNING] 見つからないブロック番号: {not_found}'))
         if not target:
-            print(f'  [SKIP] 変換対象のファイルがありません')
-            print(f'========================================')
+            print(_warn(f'  [SKIP] 変換対象のファイルがありません'))
+            print(_bold('========================================'))
             continue
 
         # ブロックごとにデータを取得
@@ -642,34 +900,44 @@ def main():
         for gml_file in target:
             mesh_code = gml_file.split('_')[0]
             gml_path  = os.path.join(input_dir, gml_file)
-            buildings, skipped = parse_gml(gml_path, lod, obj_type)
+            buildings, skipped, tex_map = parse_gml(gml_path, lod, obj_type, mat_mode)
             if skipped:
                 parts = [f'LOD{l}代替: {c}' for l, c in sorted(skipped.items(), reverse=True)]
                 extra = f'  （{" / ".join(parts)}）'
             else:
                 extra = ''
             print(f'  {gml_file}: {len(buildings)} {unit}{extra}')
-            mesh_buildings.append((mesh_code, buildings, skipped))
+            mesh_buildings.append((mesh_code, buildings, skipped, tex_map))
 
-        total_count = sum(len(b) for _, b, _ in mesh_buildings)
+        total_count = sum(len(b) for _, b, _, _ in mesh_buildings)
         if total_count == 0:
-            print(f'  [SKIP] 変換できるデータが 0 件のため出力しません')
-            print(f'========================================')
+            print(_warn(f'  [SKIP] 変換できるデータが 0 件のため出力しません'))
+            print(_bold('========================================'))
             continue
 
         # 出力ファイル名: {-o}_{LOD}_{type}_{ブロック番号...}.obj
-        mesh_codes = [mc for mc, _, _ in mesh_buildings]
+        mesh_codes = [mc for mc, _, _, _ in mesh_buildings]
         prefix = f'{args.output}_' if args.output else ''
         out_name = f'{prefix}LOD{lod}_{obj_type}_{"_".join(mesh_codes)}.obj'
         out_path = os.path.join(output_dir, out_name)
         label = ' + '.join(mesh_codes)
 
-        total = write_obj_file(out_path, [(mc, b) for mc, b, _ in mesh_buildings], lod, label, obj_type)
+        # ブロックをまたいで tex_map を統合
+        combined_tex_map = {}
+        for _, _, _, tm in mesh_buildings:
+            combined_tex_map.update(tm)
+
+        total = write_obj_file(
+            out_path,
+            [(mc, b) for mc, b, _, _ in mesh_buildings],
+            lod, label, obj_type,
+            mat_mode, combined_tex_map,
+        )
         output_paths.append(out_path)
 
         # 全ブロックの skipped_lod 辞書を集約
         total_skipped_map = {}
-        for _, _, s in mesh_buildings:
+        for _, _, s, _ in mesh_buildings:
             for actual_lod, count in s.items():
                 total_skipped_map[actual_lod] = total_skipped_map.get(actual_lod, 0) + count
         total_skipped = sum(total_skipped_map.values())
@@ -679,17 +947,17 @@ def main():
             print(f'  LOD{lod}     : {total - total_skipped} {unit}')
             for actual_lod in sorted(total_skipped_map, reverse=True):
                 print(f'  LOD{actual_lod}代替  : {total_skipped_map[actual_lod]} {unit}')
-        print(f'========================================')
+        print(_bold('========================================'))
 
     if output_paths:
         print()
-        print(f'  出力先   : {output_dir}')
+        print(_ok('　変換が完了しました。'))
+        print(_ok(f'  出力先   : {output_dir}'))
         print()
-        print(f'　変換が完了しました。')
+        print('----------------------------------------')
         print()
-        print(f'----------------------------------------')
-        print(f'           Architecture by NAYUKITECTURE')
-        print(f'           https://nayukitecture.com/')
+        print(_brand('  Architecture by NAYUKITECTURE'))
+        print(_brand('  ') + _brand_url('https://nayukitecture.com/'))
         print()
         print()
         print()
