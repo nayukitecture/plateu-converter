@@ -15,10 +15,10 @@ jobs:
         include:
           - os: windows-latest
             asset: plateu-converter-windows.exe
-          - os: macos-13
-            asset: plateu-converter-macos-intel.zip
+            build_args: ''
           - os: macos-14
-            asset: plateu-converter-macos-arm.zip
+            asset: plateu-converter-macos.zip
+            build_args: '--target-arch universal2'
 
     runs-on: ${{ matrix.os }}
 
@@ -34,7 +34,7 @@ jobs:
 
       - name: Build
         working-directory: packaging
-        run: pyinstaller plateu-converter.spec
+        run: pyinstaller ${{ matrix.build_args }} plateu-converter.spec
 
       - name: Rename Windows artifact
         if: matrix.os == 'windows-latest'
