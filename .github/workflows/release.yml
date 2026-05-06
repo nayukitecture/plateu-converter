@@ -15,7 +15,7 @@ jobs:
         include:
           - os: windows-latest
             asset: plateu-converter-windows.exe
-          - os: macos-latest
+          - os: macos-13
             asset: plateu-converter-macos.zip
 
     runs-on: ${{ matrix.os }}
