@@ -16,7 +16,9 @@ jobs:
           - os: windows-latest
             asset: plateu-converter-windows.exe
           - os: macos-13
-            asset: plateu-converter-macos.zip
+            asset: plateu-converter-macos-intel.zip
+          - os: macos-14
+            asset: plateu-converter-macos-arm.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -40,7 +42,7 @@ jobs:
         run: mv packaging/dist/plateu-converter.exe packaging/dist/plateu-converter-windows.exe
 
       - name: Build macOS .app bundle
-        if: matrix.os == 'macos-latest'
+        if: startsWith(matrix.os, 'macos')
         shell: bash
         run: |
           APP="packaging/dist/plateu-converter.app"
@@ -82,7 +84,7 @@ jobs:
           PLIST
 
           cd packaging/dist
-          zip -r plateu-converter-macos.zip plateu-converter.app
+          zip -r "${{ matrix.asset }}" plateu-converter.app
 
       - uses: softprops/action-gh-release@v2
         with:
