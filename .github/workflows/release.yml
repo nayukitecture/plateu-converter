@@ -1,0 +1,42 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: plateu-converter.exe
+            asset: plateu-converter-windows.exe
+          - os: macos-latest
+            artifact: plateu-converter
+            asset: plateu-converter-macos
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build
+        working-directory: packaging
+        run: pyinstaller plateu-converter.spec
+
+      - name: Rename artifact
+        shell: bash
+        run: mv packaging/dist/${{ matrix.artifact }} packaging/dist/${{ matrix.asset }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/${{ matrix.asset }}
