@@ -14,11 +14,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact: plateu-converter.exe
             asset: plateu-converter-windows.exe
           - os: macos-latest
-            artifact: plateu-converter
-            asset: plateu-converter-macos
+            asset: plateu-converter-macos.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -36,9 +34,55 @@ jobs:
         working-directory: packaging
         run: pyinstaller plateu-converter.spec
 
-      - name: Rename artifact
+      - name: Rename Windows artifact
+        if: matrix.os == 'windows-latest'
         shell: bash
-        run: mv packaging/dist/${{ matrix.artifact }} packaging/dist/${{ matrix.asset }}
+        run: mv packaging/dist/plateu-converter.exe packaging/dist/plateu-converter-windows.exe
+
+      - name: Build macOS .app bundle
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          APP="packaging/dist/plateu-converter.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+
+          cp packaging/dist/plateu-converter "$APP/Contents/Resources/plateu-converter"
+          chmod +x "$APP/Contents/Resources/plateu-converter"
+
+          cat > "$APP/Contents/MacOS/plateu-converter" << 'LAUNCHER'
+          #!/bin/bash
+          BIN="$(cd "$(dirname "$0")/../Resources" && pwd)/plateu-converter"
+          chmod +x "$BIN" 2>/dev/null
+          xattr -d com.apple.quarantine "$BIN" 2>/dev/null
+          osascript << EOF
+          tell application "Terminal"
+              activate
+              do script "\"$BIN\""
+          end tell
+          EOF
+          LAUNCHER
+          chmod +x "$APP/Contents/MacOS/plateu-converter"
+
+          cat > "$APP/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>plateu-converter</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.nayukitecture.plateu-converter</string>
+              <key>CFBundleName</key>
+              <string>plateu-converter</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+          </dict>
+          </plist>
+          PLIST
+
+          cd packaging/dist
+          zip -r plateu-converter-macos.zip plateu-converter.app
 
       - uses: softprops/action-gh-release@v2
         with:
