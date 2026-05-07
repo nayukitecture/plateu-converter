@@ -25,6 +25,20 @@ jobs:
         run: mv packaging/dist/plateu-converter.exe packaging/dist/plateu-converter-windows.exe
       - uses: softprops/action-gh-release@v2
         with:
+          body: |
+            コーディングをされない方のために、使いやすくソフト化したものです。
+            以下からお使いの環境に合ったファイルをDLしてください。
+
+            **Windows の方**
+            「plateu-converter-windows.exe」をダウンロードしてください。
+            ※ ダブルクリックしても開けない場合は、右クリックのプロパティから権限を付与してください。
+
+            **Mac の方（v1.8 より対応）**
+            - Intel Mac の方：「plateu-converter-macos-intel.zip」
+            - Apple Silicon（M1/M2/M3）の方：「plateu-converter-macos-arm.zip」
+
+            解凍後、.app を右クリック →「開く」で起動してください。
+            ※ 「開発元不明」の警告が出た場合は、システム設定 → プライバシーとセキュリティ から「このまま開く」を選択してください。
           files: packaging/dist/plateu-converter-windows.exe
 
   build-mac-arm:
