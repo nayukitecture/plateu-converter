@@ -17,6 +17,10 @@ PLATEAU オープンデータは以下から入手できます。
 ダウンロードした ZIP を展開し、`resources/input/` 以下に配置してください。  
 `resources/input/` フォルダがない場合は初回起動時に自動で作成されます。
 
+**Windows の場合：** .exe と同じフォルダに `resources/input/` が作成されます。
+
+**Mac の場合：** `~/Documents/plateu-converter/resources/input/` に作成されます。
+
 ```
 resources/input/
   13209_machida-shi_pref_2023_citygml_2_op/    ← 展開したフォルダをここに置く
@@ -200,7 +204,7 @@ python plateu-converter.py -t bldg frn -lod 2 -b 51357380 -o osaka -i "../resour
 
 ## 出力
 
-- **出力先**: `resources/output/<フォルダ名>/`
+- **出力先**: `resources/output/<フォルダ名>/`（Mac の場合は `~/Documents/plateu-converter/resources/output/`）
 - **ファイル構成**:
   - OBJ ファイル: `{フォルダ名}_LOD{N}_{type}_{ブロック番号...}.obj`
   - MTL ファイル: 同名の `.mtl`（`-m 2` または `-m 3` 指定時のみ）

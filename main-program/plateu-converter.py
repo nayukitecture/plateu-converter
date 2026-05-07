@@ -607,7 +607,7 @@ def interactive_mode():
         print(_warn(f'  ※ inputフォルダを作成しました: {default_input_base}'))
         print()
         print('  PLATEAUからダウンロードして解凍したデータをそのままinputに移動して、再実行してください。')
-        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C）'))
+        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
         print('  またはデータの存在するフルパスを入力してください。')
     input_candidates = []
     if os.path.isdir(default_input_base):
@@ -624,7 +624,7 @@ def interactive_mode():
     else:
         print(_warn('    ※ inputフォルダにデータがありません'))
         print('  番号で選択できません。inputフォルダにデータを移動するか、フルパスを直接入力してください。')
-        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C）'))
+        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
 
     while True:
         val = input('  入力フォルダ: ').strip().strip('"').strip("'")
