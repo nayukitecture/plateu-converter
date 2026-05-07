@@ -17,8 +17,13 @@ import xml.etree.ElementTree
 
 # exe の実際の場所（frozen 時は sys.executable、開発時はこのファイルの場所）
 if getattr(sys, 'frozen', False):
-    exe_dir = os.path.dirname(sys.executable)
     script_path = os.path.join(sys._MEIPASS, 'plateu-converter.py')
+    if sys.platform == 'darwin':
+        # Mac では .app バンドル内は読み取り専用になる場合があるため
+        # resources フォルダは ~/Documents/plateu-converter/ に作成する
+        exe_dir = os.path.expanduser('~/Documents/plateu-converter')
+    else:
+        exe_dir = os.path.dirname(sys.executable)
 else:
     exe_dir = os.path.dirname(os.path.abspath(__file__))
     script_path = os.path.join(exe_dir, 'plateu-converter.py')
