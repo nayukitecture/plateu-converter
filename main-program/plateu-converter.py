@@ -918,7 +918,11 @@ def main():
         # 出力ファイル名: {-o}_{LOD}_{type}_{ブロック番号...}.obj
         mesh_codes = [mc for mc, _, _, _ in mesh_buildings]
         prefix = f'{args.output}_' if args.output else ''
-        out_name = f'{prefix}LOD{lod}_{obj_type}_{"_".join(mesh_codes)}.obj'
+        blocks_str = '_'.join(mesh_codes)
+        out_name = f'{prefix}LOD{lod}_{obj_type}_{blocks_str}.obj'
+        if len(out_name) > 200:
+            short = '_'.join(mesh_codes[:3]) + f'_他{len(mesh_codes) - 3}ブロック'
+            out_name = f'{prefix}LOD{lod}_{obj_type}_{short}.obj'
         out_path = os.path.join(output_dir, out_name)
         label = ' + '.join(mesh_codes)
 
