@@ -15,10 +15,13 @@ jobs:
         include:
           - os: windows-latest
             asset: plateu-converter-windows.exe
-          - os: macos-13
+            python_arch: 'x64'
+          - os: macos-14
             asset: plateu-converter-macos-intel.zip
+            python_arch: 'x64'
           - os: macos-14
             asset: plateu-converter-macos-arm.zip
+            python_arch: 'arm64'
 
     runs-on: ${{ matrix.os }}
 
@@ -28,6 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          architecture: ${{ matrix.python_arch }}
 
       - name: Install PyInstaller
         run: pip install pyinstaller
