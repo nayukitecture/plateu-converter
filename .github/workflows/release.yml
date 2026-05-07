@@ -9,84 +9,53 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset: plateu-converter-windows.exe
+          - os: macos-13
+            asset: plateu-converter-macos-intel.zip
+          - os: macos-14
+            asset: plateu-converter-macos-arm.zip
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install PyInstaller
         run: pip install pyinstaller
+
       - name: Build
         working-directory: packaging
         run: pyinstaller plateu-converter.spec
-      - name: Rename artifact
+
+      - name: Rename Windows artifact
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: mv packaging/dist/plateu-converter.exe packaging/dist/plateu-converter-windows.exe
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: packaging/dist/plateu-converter-windows.exe
 
-  build-mac-intel:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install PyInstaller
-        run: pip install pyinstaller
-      - name: Build
-        working-directory: packaging
-        run: pyinstaller plateu-converter.spec
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-intel
-          path: packaging/dist/plateu-converter
-
-  build-mac-arm:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install PyInstaller
-        run: pip install pyinstaller
-      - name: Build
-        working-directory: packaging
-        run: pyinstaller plateu-converter.spec
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-arm
-          path: packaging/dist/plateu-converter
-
-  package-mac:
-    needs: [build-mac-intel, build-mac-arm]
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: mac-intel
-          path: mac-intel
-      - uses: actions/download-artifact@v4
-        with:
-          name: mac-arm
-          path: mac-arm
-      - name: Create universal binary and .app bundle
+      - name: Build macOS .app bundle
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
         run: |
-          lipo -create -output plateu-converter mac-intel/plateu-converter mac-arm/plateu-converter
-          APP="plateu-converter.app"
+          APP="packaging/dist/plateu-converter.app"
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
-          cp plateu-converter "$APP/Contents/Resources/plateu-converter"
+          cp packaging/dist/plateu-converter "$APP/Contents/Resources/plateu-converter"
           chmod +x "$APP/Contents/Resources/plateu-converter"
           cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateu-converter"
           chmod +x "$APP/Contents/MacOS/plateu-converter"
           cp packaging/mac-info.plist "$APP/Contents/Info.plist"
-          zip -r plateu-converter-macos.zip plateu-converter.app
+          cd packaging/dist
+          zip -r "${{ matrix.asset }}" plateu-converter.app
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: plateu-converter-macos.zip
+          files: packaging/dist/${{ matrix.asset }}
