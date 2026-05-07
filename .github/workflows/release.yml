@@ -1,0 +1,80 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyinstaller
+      - name: Build
+        working-directory: packaging
+        run: pyinstaller plateu-converter.spec
+      - name: Rename
+        shell: bash
+        run: mv packaging/dist/plateu-converter.exe packaging/dist/plateu-converter-windows.exe
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/plateu-converter-windows.exe
+
+  build-mac-arm:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyinstaller
+      - name: Build
+        working-directory: packaging
+        run: pyinstaller plateu-converter.spec
+      - name: Package .app
+        run: |
+          APP="packaging/dist/plateu-converter.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp packaging/dist/plateu-converter "$APP/Contents/Resources/plateu-converter"
+          chmod +x "$APP/Contents/Resources/plateu-converter"
+          cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateu-converter"
+          chmod +x "$APP/Contents/MacOS/plateu-converter"
+          cp packaging/mac-info.plist "$APP/Contents/Info.plist"
+          cd packaging/dist && zip -r plateu-converter-macos-arm.zip plateu-converter.app
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/plateu-converter-macos-arm.zip
+
+  build-mac-intel:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python 3.11 universal2 (python.org)
+        run: |
+          curl -LO https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
+          sudo installer -pkg python-3.11.9-macos11.pkg -target /
+      - name: Install PyInstaller (x86_64)
+        run: arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/pip3 install pyinstaller
+      - name: Build (x86_64)
+        working-directory: packaging
+        run: arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11 -m PyInstaller plateu-converter.spec
+      - name: Package .app
+        run: |
+          APP="packaging/dist/plateu-converter.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp packaging/dist/plateu-converter "$APP/Contents/Resources/plateu-converter"
+          chmod +x "$APP/Contents/Resources/plateu-converter"
+          cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateu-converter"
+          chmod +x "$APP/Contents/MacOS/plateu-converter"
+          cp packaging/mac-info.plist "$APP/Contents/Info.plist"
+          cd packaging/dist && zip -r plateu-converter-macos-intel.zip plateu-converter.app
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/plateu-converter-macos-intel.zip

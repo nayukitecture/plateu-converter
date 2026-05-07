@@ -607,7 +607,7 @@ def interactive_mode():
         print(_warn(f'  ※ inputフォルダを作成しました: {default_input_base}'))
         print()
         print('  PLATEAUからダウンロードして解凍したデータをそのままinputに移動して、再実行してください。')
-        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C）'))
+        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
         print('  またはデータの存在するフルパスを入力してください。')
     input_candidates = []
     if os.path.isdir(default_input_base):
@@ -624,7 +624,7 @@ def interactive_mode():
     else:
         print(_warn('    ※ inputフォルダにデータがありません'))
         print('  番号で選択できません。inputフォルダにデータを移動するか、フルパスを直接入力してください。')
-        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C）'))
+        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
 
     while True:
         val = input('  入力フォルダ: ').strip().strip('"').strip("'")
@@ -918,7 +918,11 @@ def main():
         # 出力ファイル名: {-o}_{LOD}_{type}_{ブロック番号...}.obj
         mesh_codes = [mc for mc, _, _, _ in mesh_buildings]
         prefix = f'{args.output}_' if args.output else ''
-        out_name = f'{prefix}LOD{lod}_{obj_type}_{"_".join(mesh_codes)}.obj'
+        blocks_str = '_'.join(mesh_codes)
+        out_name = f'{prefix}LOD{lod}_{obj_type}_{blocks_str}.obj'
+        if len(out_name) > 200:
+            short = '_'.join(mesh_codes[:3]) + f'_他{len(mesh_codes) - 3}ブロック'
+            out_name = f'{prefix}LOD{lod}_{obj_type}_{short}.obj'
         out_path = os.path.join(output_dir, out_name)
         label = ' + '.join(mesh_codes)
 
