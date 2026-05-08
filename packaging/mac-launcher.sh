@@ -1,5 +1,5 @@
 #!/bin/bash
-BIN="$(cd "$(dirname "$0")/../Resources" && pwd)/plateu-converter"
+BIN="$(cd "$(dirname "$0")/../Resources" && pwd)/plateau-converter"
 chmod +x "$BIN" 2>/dev/null
 xattr -d com.apple.quarantine "$BIN" 2>/dev/null
 osascript << EOF

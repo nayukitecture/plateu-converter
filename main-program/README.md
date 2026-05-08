@@ -19,7 +19,7 @@ PLATEAU オープンデータは以下から入手できます。
 
 **Windows の場合：** .exe と同じフォルダに `resources/input/` が作成されます。
 
-**Mac の場合：** `~/Documents/plateu-converter/resources/input/` に作成されます。
+**Mac の場合：** `~/Documents/plateau-converter/resources/input/` に作成されます。
 
 ```
 resources/input/
@@ -50,7 +50,7 @@ resources/input/
 引数なしで実行すると、順に質問されて入力する方式で進みます。
 
 ```bash
-python plateu-converter.py
+python plateau-converter.py
 ```
 
 実行すると以下の順に入力を求められます。
@@ -105,7 +105,7 @@ python plateu-converter.py
 
 ```
 【同じ設定で再実行する場合のコマンド】
-  python plateu-converter.py -i "..." -b 53392339 -t bldg -lod 2 -m 2 -o machida
+  python plateau-converter.py -i "..." -b 53392339 -t bldg -lod 2 -m 2 -o machida
 ```
 
 ### コマンドライン引数で実行する方法
@@ -113,25 +113,25 @@ python plateu-converter.py
 引数を直接指定して実行することもできます。
 
 ```bash
-python plateu-converter.py -t bldg -lod 1 -b 53392339 -o sample -i "../resources/input/13209_machida-shi_pref_2023_citygml_2_op"
+python plateau-converter.py -t bldg -lod 1 -b 53392339 -o sample -i "../resources/input/13209_machida-shi_pref_2023_citygml_2_op"
 ```
 
 部位別カラー付きで変換する場合は `-m 2` を追加します。
 
 ```bash
-python plateu-converter.py -t bldg -lod 2 -m 2 -b 53392339 -o machida -i "../resources/input/13209_machida-shi_pref_2023_citygml_2_op"
+python plateau-converter.py -t bldg -lod 2 -m 2 -b 53392339 -o machida -i "../resources/input/13209_machida-shi_pref_2023_citygml_2_op"
 ```
 
 複数の種別をタイプ別に異なる LOD で変換する場合は、`-t` と `-lod` を同数指定します（位置対応）。
 
 ```bash
 # bldg=LOD2、frn=LOD3 で変換
-python plateu-converter.py -t bldg frn -lod 2 3 -b 51357380 51357370 -m 2 -o osaka-expo -i "../resources/input/27999_osaka-shi_city_2025_citygml_1_op"
+python plateau-converter.py -t bldg frn -lod 2 3 -b 51357380 51357370 -m 2 -o osaka-expo -i "../resources/input/27999_osaka-shi_city_2025_citygml_1_op"
 ```
 
 ```bash
 # 全種別を同じ LOD で変換（-lod を 1 つだけ指定）
-python plateu-converter.py -t bldg frn -lod 2 -b 51357380 -o osaka -i "../resources/input/27999_osaka-shi_city_2025_citygml_1_op"
+python plateau-converter.py -t bldg frn -lod 2 -b 51357380 -o osaka -i "../resources/input/27999_osaka-shi_city_2025_citygml_1_op"
 ```
 
 ---
@@ -204,7 +204,7 @@ python plateu-converter.py -t bldg frn -lod 2 -b 51357380 -o osaka -i "../resour
 
 ## 出力
 
-- **出力先**: `resources/output/<フォルダ名>/`（Mac の場合は `~/Documents/plateu-converter/resources/output/`）
+- **出力先**: `resources/output/<フォルダ名>/`（Mac の場合は `~/Documents/plateau-converter/resources/output/`）
 - **ファイル構成**:
   - OBJ ファイル: `{フォルダ名}_LOD{N}_{type}_{ブロック番号...}.obj`
   - MTL ファイル: 同名の `.mtl`（`-m 2` または `-m 3` 指定時のみ）

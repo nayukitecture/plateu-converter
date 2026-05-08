@@ -19,10 +19,10 @@ jobs:
       - run: pip install pyinstaller
       - name: Build
         working-directory: packaging
-        run: pyinstaller plateu-converter.spec
+        run: pyinstaller plateau-converter.spec
       - name: Rename
         shell: bash
-        run: mv packaging/dist/plateu-converter.exe packaging/dist/plateu-converter-windows.exe
+        run: mv packaging/dist/plateau-converter.exe packaging/dist/plateau-converter-windows.exe
       - uses: softprops/action-gh-release@v2
         with:
           body: |
@@ -30,12 +30,12 @@ jobs:
             以下からお使いの環境に合ったファイルをDLしてください。
 
             **Windows**
-            「plateu-converter-windows.exe」をダウンロードしてください。
+            「plateau-converter-windows.exe」をダウンロードしてください。
             ※ ダブルクリックしても開けない場合は、右クリックのプロパティから権限を付与してください。
 
             **Mac（v1.8 より対応）**
-            - Intel Mac：「plateu-converter-macos-intel.zip」
-            - Apple Silicon（M1/M2/M3）：「plateu-converter-macos-arm.zip」
+            - Intel Mac：「plateau-converter-macos-intel.zip」
+            - Apple Silicon（M1/M2/M3）：「plateau-converter-macos-arm.zip」
 
             解凍後、.app を右クリック →「開く」で起動してください。
             ※ 「開発元不明」の警告が出た場合は、システム設定 → プライバシーとセキュリティ から「このまま開く」を選択してください。
@@ -44,7 +44,7 @@ jobs:
             - LOD3 建物（bldg）のジオメトリを正しく変換するよう修正。これまで LOD3 指定時も LOD2 ジオメトリが使われていた問題を解決。
             - フォトテクスチャ（-m 3）が LOD3 建物に正しく適用されるよう修正。
             - LOD 指定に応じてマテリアルモードの選択肢を自動制限。LOD1 では部材別カラー・フォトテクスチャが選択不可に、LOD2 ではフォトテクスチャが選択不可になります。
-          files: packaging/dist/plateu-converter-windows.exe
+          files: packaging/dist/plateau-converter-windows.exe
 
   build-mac-arm:
     runs-on: macos-14
@@ -56,20 +56,20 @@ jobs:
       - run: pip install pyinstaller
       - name: Build
         working-directory: packaging
-        run: pyinstaller plateu-converter.spec
+        run: pyinstaller plateau-converter.spec
       - name: Package .app
         run: |
-          APP="packaging/dist/plateu-converter.app"
+          APP="packaging/dist/plateau-converter.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp packaging/dist/plateu-converter "$APP/Contents/Resources/plateu-converter"
-          chmod +x "$APP/Contents/Resources/plateu-converter"
-          cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateu-converter"
-          chmod +x "$APP/Contents/MacOS/plateu-converter"
+          cp packaging/dist/plateau-converter "$APP/Contents/Resources/plateau-converter"
+          chmod +x "$APP/Contents/Resources/plateau-converter"
+          cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateau-converter"
+          chmod +x "$APP/Contents/MacOS/plateau-converter"
           cp packaging/mac-info.plist "$APP/Contents/Info.plist"
-          cd packaging/dist && zip -r plateu-converter-macos-arm.zip plateu-converter.app
+          cd packaging/dist && zip -r plateau-converter-macos-arm.zip plateau-converter.app
       - uses: softprops/action-gh-release@v2
         with:
-          files: packaging/dist/plateu-converter-macos-arm.zip
+          files: packaging/dist/plateau-converter-macos-arm.zip
 
   build-mac-intel:
     runs-on: macos-14
@@ -83,17 +83,17 @@ jobs:
         run: arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/pip3 install pyinstaller
       - name: Build (x86_64)
         working-directory: packaging
-        run: arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11 -m PyInstaller plateu-converter.spec
+        run: arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11 -m PyInstaller plateau-converter.spec
       - name: Package .app
         run: |
-          APP="packaging/dist/plateu-converter.app"
+          APP="packaging/dist/plateau-converter.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp packaging/dist/plateu-converter "$APP/Contents/Resources/plateu-converter"
-          chmod +x "$APP/Contents/Resources/plateu-converter"
-          cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateu-converter"
-          chmod +x "$APP/Contents/MacOS/plateu-converter"
+          cp packaging/dist/plateau-converter "$APP/Contents/Resources/plateau-converter"
+          chmod +x "$APP/Contents/Resources/plateau-converter"
+          cp packaging/mac-launcher.sh "$APP/Contents/MacOS/plateau-converter"
+          chmod +x "$APP/Contents/MacOS/plateau-converter"
           cp packaging/mac-info.plist "$APP/Contents/Info.plist"
-          cd packaging/dist && zip -r plateu-converter-macos-intel.zip plateu-converter.app
+          cd packaging/dist && zip -r plateau-converter-macos-intel.zip plateau-converter.app
       - uses: softprops/action-gh-release@v2
         with:
-          files: packaging/dist/plateu-converter-macos-intel.zip
+          files: packaging/dist/plateau-converter-macos-intel.zip

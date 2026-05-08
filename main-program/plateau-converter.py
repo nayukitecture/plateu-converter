@@ -3,7 +3,7 @@
 PLATEAU CityGML → OBJ 変換ツール
 
 使い方:
-  python plateu-converter.py -lod 1 -b 53390329 53390338 -i <gmlフォルダ> -o <出力先>
+  python plateau-converter.py -lod 1 -b 53390329 53390338 -i <gmlフォルダ> -o <出力先>
 
 出力:
   メッシュ番号ごとに 1 つの OBJ ファイルを生成する。
@@ -942,7 +942,7 @@ def interactive_mode():
 
     # ── CLI コマンドを表示 ────────────────────────────
     lod_values = [args.lod_map.get(t, args.lod) for t in args.types]
-    cmd_parts = ['python plateu-converter.py']
+    cmd_parts = ['python plateau-converter.py']
     cmd_parts.append(f'-i "{args.input}"')
     if args.meshes:
         cmd_parts.append('-b ' + ' '.join(args.meshes))
@@ -972,13 +972,13 @@ def main():
         epilog="""
 例:
   # LOD1 で 2 ブロックだけ変換
-  python plateu-converter.py -lod 1 -b 53390329 53390338 -i ../resources/input/14100.../
+  python plateau-converter.py -lod 1 -b 53390329 53390338 -i ../resources/input/14100.../
 
   # LOD2 で部位別カラー付きで変換
-  python plateu-converter.py -lod 2 -m 1 -i ../resources/input/14100.../
+  python plateau-converter.py -lod 2 -m 1 -i ../resources/input/14100.../
 
   # LOD2 でフォトテクスチャ付きで変換（データ量大）
-  python plateu-converter.py -lod 2 -m 2 -i ../resources/input/14100.../
+  python plateau-converter.py -lod 2 -m 2 -i ../resources/input/14100.../
 """)
 
     parser.add_argument('-lod', type=int, nargs='+', choices=[1, 2, 3], default=[1],
