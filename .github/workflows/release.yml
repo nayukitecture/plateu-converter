@@ -29,19 +29,21 @@ jobs:
             コーディングをされない方のために、使いやすくソフト化したものです。
             以下からお使いの環境に合ったファイルをDLしてください。
 
-            **Windows の方**
+            **Windows**
             「plateu-converter-windows.exe」をダウンロードしてください。
             ※ ダブルクリックしても開けない場合は、右クリックのプロパティから権限を付与してください。
 
-            **Mac の方（v1.8 より対応）**
-            - Intel Mac の方：「plateu-converter-macos-intel.zip」
-            - Apple Silicon（M1/M2/M3）の方：「plateu-converter-macos-arm.zip」
+            **Mac（v1.8 より対応）**
+            - Intel Mac：「plateu-converter-macos-intel.zip」
+            - Apple Silicon（M1/M2/M3）：「plateu-converter-macos-arm.zip」
 
             解凍後、.app を右クリック →「開く」で起動してください。
             ※ 「開発元不明」の警告が出た場合は、システム設定 → プライバシーとセキュリティ から「このまま開く」を選択してください。
 
-            **v1.9 更新内容**
-            - LOD 検出の修正: LOD3 が一部ファイルにのみ存在するデータセット（大阪市等）で、LOD3 が選択肢に表示されない問題を解決。
+            **v1.10 更新内容**
+            - LOD3 建物（bldg）のジオメトリを正しく変換するよう修正。これまで LOD3 指定時も LOD2 ジオメトリが使われていた問題を解決。
+            - フォトテクスチャ（-m 3）が LOD3 建物に正しく適用されるよう修正。
+            - LOD 指定に応じてマテリアルモードの選択肢を自動制限。LOD1 では部材別カラー・フォトテクスチャが選択不可に、LOD2 ではフォトテクスチャが選択不可になります。
           files: packaging/dist/plateu-converter-windows.exe
 
   build-mac-arm:

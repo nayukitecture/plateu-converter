@@ -23,6 +23,7 @@ import datetime
 import math
 import os
 import sys
+import threading
 import xml.etree.ElementTree as ET
 
 # Windows ターミナルで ANSI カラーを有効化
@@ -90,7 +91,7 @@ NS = {
 TYPE_CONFIG = {
     'bldg': {
         'root_tags': ['Building'],
-        # 専用パーサー使用: lod1Solid（LOD1）/ boundedBy+lod2MultiSurface（LOD2）
+        # 専用パーサー使用: lod1Solid（LOD1）/ boundedBy+lod2MultiSurface（LOD2）/ boundedBy+lod3MultiSurface（LOD3）
     },
     'tran': {
         'root_tags': ['Road', 'Railway', 'Track', 'Square'],
@@ -271,6 +272,24 @@ def get_polygons_lod2(building):
     return polys
 
 
+def get_polygons_lod3(building):
+    """bldg:boundedBy 以下の lod3MultiSurface からポリゴンを取得する（bldg 専用）"""
+    polys = []
+    for bounded in building.findall('bldg:boundedBy', NS):
+        surface_type = None
+        for child in bounded:
+            local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            surface_type = local
+            break
+        for ms in bounded.findall('.//bldg:lod3MultiSurface', NS):
+            for poly in ms.findall('.//gml:Polygon', NS):
+                pts = ring_to_pts(poly)
+                if len(pts) >= 3:
+                    poly_id = poly.get('{http://www.opengis.net/gml}id', '')
+                    polys.append((pts, surface_type, poly_id))
+    return polys
+
+
 def get_polygons_generic(element, ns_prefix, lod_tag):
     """
     tran / luse / veg / frn 用の汎用ポリゴン取得。
@@ -357,9 +376,17 @@ def parse_gml(gml_path, lod, obj_type='bldg', mat_mode=1):
             obj_id = element.get('{http://www.opengis.net/gml}id', 'unknown')
 
             if obj_type in ('bldg', 'ubld'):
-                # bldg / ubld は専用パーサー（lod1Solid / boundedBy+lod2MultiSurface）
-                # LOD2 以上が指定されたら LOD2 を試み、なければ LOD1 で代替
-                if lod >= 2:
+                # bldg / ubld は専用パーサー: lod3 → lod2 → lod1 の順でフォールバック
+                if lod >= 3:
+                    polys = get_polygons_lod3(element)
+                    if not polys:
+                        polys = get_polygons_lod2(element)
+                        if not polys:
+                            polys = get_polygons_lod1(element)
+                            skipped_lod[1] = skipped_lod.get(1, 0) + 1
+                        else:
+                            skipped_lod[2] = skipped_lod.get(2, 0) + 1
+                elif lod == 2:
                     polys = get_polygons_lod2(element)
                     if not polys:
                         polys = get_polygons_lod1(element)
@@ -412,6 +439,12 @@ def write_mtl_file(mtl_path, mat_mode, surface_types_used=None, textures_used=No
                 f.write(f'Kd {r:.4f} {g:.4f} {b:.4f}\n\n')
 
         elif mat_mode == 3:
+            # LOD2 フォールバック建物向けの部材別カラー
+            if surface_types_used:
+                for st in sorted(st for st in surface_types_used if st is not None):
+                    r, g, b = get_surface_color(st)
+                    f.write(f'newmtl mat_{st}\n')
+                    f.write(f'Kd {r:.4f} {g:.4f} {b:.4f}\n\n')
             for mat_name, img_path in sorted(textures_used.items()):
                 f.write(f'newmtl {mat_name}\n')
                 f.write(f'map_Kd {img_path.replace(os.sep, "/")}\n\n')
@@ -491,10 +524,17 @@ def write_obj_file(out_path, mesh_buildings, lod, label, obj_type,
                         uv_offset += n
 
                     else:
-                        # mode 0、または mode 2 でテクスチャのないポリゴン
-                        if mat_mode == 3 and 'mat_default' != prev_mat:
-                            f.write('usemtl mat_default\n')
-                            prev_mat = 'mat_default'
+                        # mat_mode=3 でテクスチャなし: surface_type があれば部材別カラー、なければ mat_default
+                        if mat_mode == 3 and surface_type:
+                            mat_name = f'mat_{surface_type}'
+                            surface_types_used.add(surface_type)
+                            if mat_name != prev_mat:
+                                f.write(f'usemtl {mat_name}\n')
+                                prev_mat = mat_name
+                        elif mat_mode == 3:
+                            if prev_mat != 'mat_default':
+                                f.write('usemtl mat_default\n')
+                                prev_mat = 'mat_default'
                         face_idx = list(range(v_idx, v_idx + n))
                         f.write('f ' + ' '.join(map(str, face_idx)) + '\n')
 
@@ -508,7 +548,7 @@ def write_obj_file(out_path, mesh_buildings, lod, label, obj_type,
     if mat_mode == 2:
         write_mtl_file(mtl_path, 2, surface_types_used=surface_types_used)
     elif mat_mode == 3:
-        write_mtl_file(mtl_path, 3, textures_used=textures_used)
+        write_mtl_file(mtl_path, 3, surface_types_used=surface_types_used, textures_used=textures_used)
 
     return total
 
@@ -591,189 +631,314 @@ def detect_available_lods(input_dir, obj_type):
     return sorted(found) if found else [1]
 
 
+def _with_spinner(message, func, *args, **kwargs):
+    """func を実行しながらターミナルにスピナーアニメーションを表示する。"""
+    done = threading.Event()
+    result_holder = [None]
+
+    def _worker():
+        result_holder[0] = func(*args, **kwargs)
+        done.set()
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+    frames = ['|', '/', '-', '\\']
+    i = 0
+    while not done.wait(timeout=0.1):
+        print(f'\r  {frames[i % 4]} {message}', end='', flush=True)
+        i += 1
+    print(f'\r{" " * (len(message) + 6)}\r', end='', flush=True)
+    t.join()
+    return result_holder[0]
+
+
 def interactive_mode():
     """引数なしで起動したときの一問一答入力モード"""
+
+    _BACK = object()  # 前のステップへ戻るセンチネル
+
+    def _inp(prompt):
+        """input() ラッパー。'b' または 'back' 入力で _BACK を返す。"""
+        v = input(prompt).strip().strip('"').strip("'")
+        return _BACK if v.lower() in ('b', 'back') else v
+
+    HINT = _warn('  b: 前のステップへ  /  Enter: 現在値のまま次へ')
+
     print(_ok('=' * 44))
     print(_ok('  PLATEAU CityGML → OBJ'))
     print(_ok('　変換ツールを開始します。'))
     print(_ok('=' * 44))
 
     args = argparse.Namespace()
-
-    # ── 1. 入力フォルダ (-i) ──────────────────────────
-    print(_h('【入力フォルダ (-i)】'))
-
-    # スクリプトの隣の resources/input/ を候補として列挙
-    default_input_base = os.path.join(os.path.dirname(__file__), '..', 'resources', 'input')
-    default_input_base = os.path.normpath(default_input_base)
-    if not os.path.isdir(default_input_base):
-        os.makedirs(default_input_base, exist_ok=True)
-        print(_warn(f'  ※ inputフォルダを作成しました: {default_input_base}'))
-        print()
-        print('  PLATEAUからダウンロードして解凍したデータをそのままinputに移動して、再実行してください。')
-        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
-        print('  またはデータの存在するフルパスを入力してください。')
-    input_candidates = []
-    if os.path.isdir(default_input_base):
-        input_candidates = sorted(
-            d for d in os.listdir(default_input_base)
-            if os.path.isdir(os.path.join(default_input_base, d))
-        )
-
-    print('  利用可能なデータセット:')
-    if input_candidates:
-        for i, name in enumerate(input_candidates, 1):
-            print(f'    {i}: {name}')
-        print('  番号で選択できます。リスト以外の場所にあるフォルダはパスを直接入力してください。')
-    else:
-        print(_warn('    ※ inputフォルダにデータがありません'))
-        print('  番号で選択できません。inputフォルダにデータを移動するか、フルパスを直接入力してください。')
-        print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
-
-    while True:
-        val = input('  入力フォルダ: ').strip().strip('"').strip("'")
-        if not val:
-            print(_warn('  ※ 番号またはフォルダパスを入力してください。'))
-            continue
-        # 番号入力の場合
-        if val.isdigit() and input_candidates:
-            idx = int(val) - 1
-            if 0 <= idx < len(input_candidates):
-                args.input = os.path.join(default_input_base, input_candidates[idx])
-                break
-            print(_warn(f'  ※ 1〜{len(input_candidates)} の番号を入力してください。'))
-            continue
-        # フルパス入力の場合
-        if os.path.isdir(val):
-            args.input = val
-            break
-        print(_warn('  ※ フォルダが見つかりません。再入力してください。'))
-
-    udx_dir = find_udx_dir(args.input)
-
-    # ── 2. ブロック番号 (-b) ─────────────────────────
-    available_blocks = set()
-    if os.path.isdir(udx_dir):
-        for type_name in os.listdir(udx_dir):
-            type_path = os.path.join(udx_dir, type_name)
-            if os.path.isdir(type_path):
-                for f in os.listdir(type_path):
-                    if f.endswith('.gml'):
-                        available_blocks.add(f.split('_')[0])
-
-    print(_h('\n【ブロック番号 (-b)】'))
-    print('  変換対象のブロック番号を入力します（1つ以上必須）。')
-    print('  複数変換する場合はスペース区切りで入力します。')
-    print('  ※ ブロック番号は GML ファイル名の先頭の数字です（国土地理院の地図メッシュ番号）。')
-    if available_blocks:
-        examples = ' '.join(sorted(available_blocks)[:3])
-        print(f'  例: {examples}')
-    while True:
-        val = input('  ブロック番号: ').strip()
-        if not val:
-            print(_warn('  ※ ブロック番号を1つ以上入力してください。'))
-            continue
-        entered = val.split()
-        if available_blocks:
-            invalid = [b for b in entered if b not in available_blocks]
-            if invalid:
-                print(_warn(f'  ※ 次のブロック番号は存在しません: {" ".join(invalid)}'))
-                continue
-        args.meshes = entered
-        break
-
-    # ── 3. オブジェクト種別 (-t) ──────────────────────
-    available_types = []
-    if os.path.isdir(udx_dir):
-        for type_name in sorted(os.listdir(udx_dir)):
-            type_path = os.path.join(udx_dir, type_name)
-            if (os.path.isdir(type_path)
-                    and type_name in TYPE_CONFIG
-                    and any(f.endswith('.gml') for f in os.listdir(type_path))):
-                available_types.append(type_name)
-
-    print(_h('\n【オブジェクト種別 (-t)】'))
-    print('  変換するオブジェクト種別を入力します（1つ以上必須）。')
-    print('  複数変換する場合はスペース区切りで入力します。')
-    if available_types:
-        print('  選択可能な種別:')
-        for t in available_types:
-            desc = TYPE_DESCRIPTIONS.get(t, '')
-            print(f'    {t:<6}  {desc}')
-    while True:
-        val = input('  種別: ').strip()
-        if not val:
-            print(_warn('  ※ 種別を1つ以上入力してください。'))
-            continue
-        entered = val.split()
-        if available_types:
-            invalid = [t for t in entered if t not in available_types]
-            if invalid:
-                print(_warn(f'  ※ 次の種別はこのデータセットに存在しません: {" ".join(invalid)}'))
-                continue
-        args.types = entered
-        break
-
-    # ── 4. LOD レベル（タイプ別） ─────────────────────
+    args.input  = None
+    args.meshes = None
+    args.types  = None
     args.lod_map = {}
-    args.lod = 1  # CLI 互換用デフォルト値
+    args.lod    = 1   # CLI 互換用デフォルト値
+    args.mat_mode = 1
+    args.output = None
 
-    for obj_type in args.types:
-        type_dir = None
-        for candidate in [
-            os.path.join(udx_dir, obj_type),
-            os.path.join(args.input, obj_type),
-        ]:
-            if os.path.isdir(candidate) and any(f.endswith('.gml') for f in os.listdir(candidate)):
-                type_dir = candidate
+    step = 0  # 0:入力フォルダ 1:ブロック番号 2:種別 3:LOD 4:マテリアル 5:出力フォルダ
+
+    while step <= 5:
+        go_back = False
+
+        # ── 0. 入力フォルダ (-i) ──────────────────────────
+        if step == 0:
+            default_input_base = os.path.join(os.path.dirname(__file__), '..', 'resources', 'input')
+            default_input_base = os.path.normpath(default_input_base)
+            if not os.path.isdir(default_input_base):
+                os.makedirs(default_input_base, exist_ok=True)
+                print(_warn(f'  ※ inputフォルダを作成しました: {default_input_base}'))
+                print()
+                print('  PLATEAUからダウンロードして解凍したデータをそのままinputに移動して、再実行してください。')
+                print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
+                print('  またはデータの存在するフルパスを入力してください。')
+            input_candidates = []
+            if os.path.isdir(default_input_base):
+                input_candidates = sorted(
+                    d for d in os.listdir(default_input_base)
+                    if os.path.isdir(os.path.join(default_input_base, d))
+                )
+
+            print(_h('【入力フォルダ (-i)】'))
+            print(HINT)
+            print('  利用可能なデータセット:')
+            if input_candidates:
+                for i, name in enumerate(input_candidates, 1):
+                    print(f'    {i}: {name}')
+                print('  番号で選択できます。リスト以外の場所にあるフォルダはパスを直接入力してください。')
+            else:
+                print(_warn('    ※ inputフォルダにデータがありません'))
+                print('  番号で選択できません。inputフォルダにデータを移動するか、フルパスを直接入力してください。')
+                print(_warn('  （再実行のためにこの処理を中止する場合は Ctrl + C / Mac はターミナルウィンドウを閉じても終了できます）'))
+
+            cur = f'（現在: {os.path.basename(args.input)}）' if args.input else ''
+            while True:
+                val = _inp(f'  入力フォルダ{cur}: ')
+                if val is _BACK:
+                    print(_warn('  ※ これ以上前のステップはありません。'))
+                    continue
+                if not val:
+                    if args.input:
+                        break  # Enter で現在値を維持して次へ
+                    print(_warn('  ※ 番号またはフォルダパスを入力してください。'))
+                    continue
+                if val.isdigit() and input_candidates:
+                    idx = int(val) - 1
+                    if 0 <= idx < len(input_candidates):
+                        args.input = os.path.join(default_input_base, input_candidates[idx])
+                        break
+                    print(_warn(f'  ※ 1〜{len(input_candidates)} の番号を入力してください。'))
+                    continue
+                if os.path.isdir(val):
+                    args.input = val
+                    break
+                print(_warn('  ※ フォルダが見つかりません。再入力してください。'))
+
+        # ── 1. ブロック番号 (-b) ─────────────────────────
+        elif step == 1:
+            udx_dir = find_udx_dir(args.input)
+            available_blocks = set()
+            if os.path.isdir(udx_dir):
+                for type_name in os.listdir(udx_dir):
+                    type_path = os.path.join(udx_dir, type_name)
+                    if os.path.isdir(type_path):
+                        for f in os.listdir(type_path):
+                            if f.endswith('.gml'):
+                                available_blocks.add(f.split('_')[0])
+
+            print(_h('\n【ブロック番号 (-b)】'))
+            print(HINT)
+            print('  変換対象のブロック番号を入力します（1つ以上必須）。')
+            print('  複数変換する場合はスペース区切りで入力します。')
+            print('  ※ ブロック番号は GML ファイル名の先頭の数字です（国土地理院の地図メッシュ番号）。')
+            if available_blocks:
+                examples = ' '.join(sorted(available_blocks)[:3])
+                print(f'  例: {examples}')
+
+            cur = f'（現在: {" ".join(args.meshes)}）' if args.meshes else ''
+            while True:
+                val = _inp(f'  ブロック番号{cur}: ')
+                if val is _BACK:
+                    go_back = True
+                    break
+                if not val:
+                    if args.meshes:
+                        break  # Enter で現在値を維持して次へ
+                    print(_warn('  ※ ブロック番号を1つ以上入力してください。'))
+                    continue
+                entered = val.split()
+                if available_blocks:
+                    invalid = [b for b in entered if b not in available_blocks]
+                    if invalid:
+                        print(_warn(f'  ※ 次のブロック番号は存在しません: {" ".join(invalid)}'))
+                        continue
+                args.meshes = entered
                 break
 
-        if type_dir is None:
-            args.lod_map[obj_type] = 1
-            continue
+        # ── 2. オブジェクト種別 (-t) ──────────────────────
+        elif step == 2:
+            udx_dir = find_udx_dir(args.input)
+            available_types = []
+            if os.path.isdir(udx_dir):
+                for type_name in sorted(os.listdir(udx_dir)):
+                    type_path = os.path.join(udx_dir, type_name)
+                    if (os.path.isdir(type_path)
+                            and type_name in TYPE_CONFIG
+                            and any(f.endswith('.gml') for f in os.listdir(type_path))):
+                        available_types.append(type_name)
 
-        available_lods = detect_available_lods(type_dir, obj_type)
-        desc = TYPE_DESCRIPTIONS.get(obj_type, obj_type)
-        lod_str = '/'.join(map(str, available_lods))
-        default_lod = available_lods[-1]  # 最高LODをデフォルトに
+            print(_h('\n【オブジェクト種別 (-t)】'))
+            print(HINT)
+            print('  変換するオブジェクト種別を入力します（1つ以上必須）。')
+            print('  複数変換する場合はスペース区切りで入力します。')
+            if available_types:
+                print('  選択可能な種別:')
+                for t in available_types:
+                    desc = TYPE_DESCRIPTIONS.get(t, '')
+                    print(f'    {t:<6}  {desc}')
 
-        print(_h(f'\n【LOD レベル ({obj_type}: {desc})】'))
-        print(f'  利用可能なLOD: {lod_str}')
-        while True:
-            val = input(f'  LOD [{lod_str}] (既定: {default_lod}): ').strip()
-            if val == '':
-                args.lod_map[obj_type] = default_lod
+            cur = f'（現在: {" ".join(args.types)}）' if args.types else ''
+            while True:
+                val = _inp(f'  種別{cur}: ')
+                if val is _BACK:
+                    go_back = True
+                    break
+                if not val:
+                    if args.types:
+                        break  # Enter で現在値を維持して次へ
+                    print(_warn('  ※ 種別を1つ以上入力してください。'))
+                    continue
+                entered = val.split()
+                if available_types:
+                    invalid = [t for t in entered if t not in available_types]
+                    if invalid:
+                        print(_warn(f'  ※ 次の種別はこのデータセットに存在しません: {" ".join(invalid)}'))
+                        continue
+                args.types = entered
                 break
-            elif val.isdigit() and int(val) in available_lods:
-                args.lod_map[obj_type] = int(val)
-                break
-            print(_warn(f'  ※ {lod_str} のいずれかを入力してください。'))
 
-    # ── 5. マテリアルモード (-m) ──────────────────────
-    print(_h('\n【マテリアルモード (-m)】'))
-    print('  1: なし          マテリアルなし（最も軽量）')
-    print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
-    print(f'  3: フォトテクスチャ  撮影写真を貼り付け{_warn("（※ データ量が大幅に増加）")}')
-    while True:
-        val = input('  マテリアルモード [1/2/3] (既定: 1): ').strip()
-        if val in ('', '1'):
-            args.mat_mode = 1
-            break
-        elif val == '2':
-            args.mat_mode = 2
-            break
-        elif val == '3':
-            args.mat_mode = 3
-            break
-        print(_warn('  ※ 1、2、3 のいずれかを入力してください。'))
+        # ── 3. LOD レベル（タイプ別） ─────────────────────
+        elif step == 3:
+            udx_dir = find_udx_dir(args.input)
+            lod_cancelled = False
 
-    # ── 6. 出力フォルダ名 (-o) ────────────────────────
-    print(_h('\n【出力フォルダ名 (-o)】'))
-    print('  resources/output/ 内に作成するサブフォルダ名を指定します。')
-    print('  省略すると日時フォルダ（yyyymmdd-hhmmss）が自動生成されます。')
-    print('  例: machida-station')
-    val = input('  出力フォルダ名 (既定: 日時自動): ').strip()
-    args.output = val if val else None
+            for obj_type in args.types:
+                if lod_cancelled:
+                    break
+                type_dir = None
+                for candidate in [
+                    os.path.join(udx_dir, obj_type),
+                    os.path.join(args.input, obj_type),
+                ]:
+                    if os.path.isdir(candidate) and any(f.endswith('.gml') for f in os.listdir(candidate)):
+                        type_dir = candidate
+                        break
+
+                if type_dir is None:
+                    args.lod_map[obj_type] = 1
+                    continue
+
+                desc = TYPE_DESCRIPTIONS.get(obj_type, obj_type)
+                available_lods = _with_spinner(
+                    f'{obj_type}（{desc}）の LOD を検出中...',
+                    detect_available_lods, type_dir, obj_type
+                )
+                lod_str = '/'.join(map(str, available_lods))
+                default_lod = available_lods[-1]
+                cur_lod = args.lod_map.get(obj_type)
+                cur = f'（現在: {cur_lod}）' if cur_lod else ''
+
+                print(_h(f'\n【LOD レベル ({obj_type}: {desc})】'))
+                print(HINT)
+                print(f'  利用可能なLOD: {lod_str}')
+                while True:
+                    val = _inp(f'  LOD [{lod_str}] (既定: {default_lod}){cur}: ')
+                    if val is _BACK:
+                        lod_cancelled = True
+                        break
+                    if val == '':
+                        args.lod_map[obj_type] = cur_lod if cur_lod else default_lod
+                        break
+                    elif val.isdigit() and int(val) in available_lods:
+                        args.lod_map[obj_type] = int(val)
+                        break
+                    print(_warn(f'  ※ {lod_str} のいずれかを入力してください。'))
+
+            if lod_cancelled:
+                go_back = True
+
+        # ── 4. マテリアルモード (-m) ──────────────────────
+        elif step == 4:
+            max_lod = max(args.lod_map.values()) if args.lod_map else 1
+            print(_h('\n【マテリアルモード (-m)】'))
+            print(HINT)
+            if max_lod == 1:
+                print('  1: なし          マテリアルなし（最も軽量）')
+                print(_warn('  ※ LOD1 ではマテリアルなし（1）のみ選択できます。'))
+                val = _inp('  マテリアルモード (Enter で確定): ')
+                if val is _BACK:
+                    go_back = True
+                else:
+                    args.mat_mode = 1
+            elif max_lod == 2:
+                print('  1: なし          マテリアルなし（最も軽量）')
+                print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
+                print(_warn('  ※ LOD2 ではフォトテクスチャ（3）は選択できません。'))
+                cur = f'（現在: {args.mat_mode}）'
+                while True:
+                    val = _inp(f'  マテリアルモード [1/2] (既定: 1){cur}: ')
+                    if val is _BACK:
+                        go_back = True
+                        break
+                    if val in ('', '1'):
+                        args.mat_mode = 1
+                        break
+                    elif val == '2':
+                        args.mat_mode = 2
+                        break
+                    print(_warn('  ※ 1 または 2 を入力してください。'))
+            else:  # max_lod >= 3
+                print('  1: なし          マテリアルなし（最も軽量）')
+                print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
+                print(f'  3: フォトテクスチャ  撮影写真を貼り付け{_warn("（※ データ量が大幅に増加）")}')
+                cur = f'（現在: {args.mat_mode}）'
+                while True:
+                    val = _inp(f'  マテリアルモード [1/2/3] (既定: 1){cur}: ')
+                    if val is _BACK:
+                        go_back = True
+                        break
+                    if val in ('', '1'):
+                        args.mat_mode = 1
+                        break
+                    elif val == '2':
+                        args.mat_mode = 2
+                        break
+                    elif val == '3':
+                        args.mat_mode = 3
+                        break
+                    print(_warn('  ※ 1、2、3 のいずれかを入力してください。'))
+
+        # ── 5. 出力フォルダ名 (-o) ────────────────────────
+        elif step == 5:
+            print(_h('\n【出力フォルダ名 (-o)】'))
+            print(HINT)
+            print('  resources/output/ 内に作成するサブフォルダ名を指定します。')
+            print('  省略すると日時フォルダ（yyyymmdd-hhmmss）が自動生成されます。')
+            print('  例: machida-station')
+            cur = f'（現在: {args.output}）' if args.output else ''
+            val = _inp(f'  出力フォルダ名 (既定: 日時自動){cur}: ')
+            if val is _BACK:
+                go_back = True
+            else:
+                args.output = val if val else None
+
+        if go_back:
+            step = max(0, step - 1)
+        else:
+            step += 1
 
     # ── CLI コマンドを表示 ────────────────────────────
     lod_values = [args.lod_map.get(t, args.lod) for t in args.types]
