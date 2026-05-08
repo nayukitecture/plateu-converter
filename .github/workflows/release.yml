@@ -29,11 +29,11 @@ jobs:
             コーディングをされない方のために、使いやすくソフト化したものです。
             以下からお使いの環境に合ったファイルをDLしてください。
 
-            **Windows の方**
+            **Windows**
             「plateu-converter-windows.exe」をダウンロードしてください。
             ※ ダブルクリックしても開けない場合は、右クリックのプロパティから権限を付与してください。
 
-            **Mac の方（v1.8 より対応）**
+            **Mac（v1.8 より対応）**
             - Intel Mac の方：「plateu-converter-macos-intel.zip」
             - Apple Silicon（M1/M2/M3）の方：「plateu-converter-macos-arm.zip」
 
