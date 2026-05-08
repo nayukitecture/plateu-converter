@@ -663,7 +663,7 @@ def interactive_mode():
         v = input(prompt).strip().strip('"').strip("'")
         return _BACK if v.lower() in ('b', 'back') else v
 
-    HINT = _warn('  b: 前のステップへ  /  Enter: 現在値のまま次へ（初回は入力必須）')
+    HINT = _warn('  b: 前のステップへ  /  Enter: 現在値のまま次へ')
 
     print(_ok('=' * 44))
     print(_ok('  PLATEAU CityGML → OBJ'))
