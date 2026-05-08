@@ -1,14 +1,14 @@
 """
-plateu-converter.exe の起動ラッパー。
+plateau-converter.exe の起動ラッパー。
 
 PyInstaller でビルドする際のエントリーポイント。
-plateu-converter.py の __file__ を「exeと同じフォルダ/main-program/plateu-converter.py」に
+plateau-converter.py の __file__ を「exeと同じフォルダ/main-program/plateau-converter.py」に
 偽装して実行することで、resources/input・resources/output が exe の隣に作られるようにする。
 """
 import os
 import sys
 
-# PyInstaller静的解析用: plateu-converter.py が使用するモジュールを明示的にインポート
+# PyInstaller静的解析用: plateau-converter.py が使用するモジュールを明示的にインポート
 import argparse
 import colorsys
 import datetime
@@ -17,22 +17,22 @@ import xml.etree.ElementTree
 
 # exe の実際の場所（frozen 時は sys.executable、開発時はこのファイルの場所）
 if getattr(sys, 'frozen', False):
-    script_path = os.path.join(sys._MEIPASS, 'plateu-converter.py')
+    script_path = os.path.join(sys._MEIPASS, 'plateau-converter.py')
     if sys.platform == 'darwin':
         # Mac では .app バンドル内は読み取り専用になる場合があるため
-        # resources フォルダは ~/Documents/plateu-converter/ に作成する
-        exe_dir = os.path.expanduser('~/Documents/plateu-converter')
+        # resources フォルダは ~/Documents/plateau-converter/ に作成する
+        exe_dir = os.path.expanduser('~/Documents/plateau-converter')
     else:
         exe_dir = os.path.dirname(sys.executable)
 else:
     exe_dir = os.path.dirname(os.path.abspath(__file__))
-    script_path = os.path.join(exe_dir, 'plateu-converter.py')
+    script_path = os.path.join(exe_dir, 'plateau-converter.py')
 
-# __file__ を「exe_dir/main-program/plateu-converter.py」に偽装する。
-# plateu-converter.py 内では os.path.dirname(__file__) + '/../resources/...' と
+# __file__ を「exe_dir/main-program/plateau-converter.py」に偽装する。
+# plateau-converter.py 内では os.path.dirname(__file__) + '/../resources/...' と
 # パスを組み立てているため、main-program/ を一段挟むことで
 # exe_dir/resources/input・output が作成先になる。
-fake_file = os.path.join(exe_dir, 'main-program', 'plateu-converter.py')
+fake_file = os.path.join(exe_dir, 'main-program', 'plateau-converter.py')
 
 # resources/README.md を初回のみ作成
 resources_dir = os.path.join(exe_dir, 'resources')
@@ -41,7 +41,7 @@ if not os.path.exists(readme_path):
     os.makedirs(resources_dir, exist_ok=True)
     with open(readme_path, 'w', encoding='utf-8') as f:
         f.write("""\
-# plateu-converter リソースフォルダ
+# plateau-converter リソースフォルダ
 
 ## input/
 PLATEAUからダウンロードして解凍したデータを配置してください。
