@@ -90,7 +90,7 @@ NS = {
 TYPE_CONFIG = {
     'bldg': {
         'root_tags': ['Building'],
-        # 専用パーサー使用: lod1Solid（LOD1）/ boundedBy+lod2MultiSurface（LOD2）
+        # 専用パーサー使用: lod1Solid（LOD1）/ boundedBy+lod2MultiSurface（LOD2）/ boundedBy+lod3MultiSurface（LOD3）
     },
     'tran': {
         'root_tags': ['Road', 'Railway', 'Track', 'Square'],
@@ -271,6 +271,24 @@ def get_polygons_lod2(building):
     return polys
 
 
+def get_polygons_lod3(building):
+    """bldg:boundedBy 以下の lod3MultiSurface からポリゴンを取得する（bldg 専用）"""
+    polys = []
+    for bounded in building.findall('bldg:boundedBy', NS):
+        surface_type = None
+        for child in bounded:
+            local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            surface_type = local
+            break
+        for ms in bounded.findall('.//bldg:lod3MultiSurface', NS):
+            for poly in ms.findall('.//gml:Polygon', NS):
+                pts = ring_to_pts(poly)
+                if len(pts) >= 3:
+                    poly_id = poly.get('{http://www.opengis.net/gml}id', '')
+                    polys.append((pts, surface_type, poly_id))
+    return polys
+
+
 def get_polygons_generic(element, ns_prefix, lod_tag):
     """
     tran / luse / veg / frn 用の汎用ポリゴン取得。
@@ -357,9 +375,17 @@ def parse_gml(gml_path, lod, obj_type='bldg', mat_mode=1):
             obj_id = element.get('{http://www.opengis.net/gml}id', 'unknown')
 
             if obj_type in ('bldg', 'ubld'):
-                # bldg / ubld は専用パーサー（lod1Solid / boundedBy+lod2MultiSurface）
-                # LOD2 以上が指定されたら LOD2 を試み、なければ LOD1 で代替
-                if lod >= 2:
+                # bldg / ubld は専用パーサー: lod3 → lod2 → lod1 の順でフォールバック
+                if lod >= 3:
+                    polys = get_polygons_lod3(element)
+                    if not polys:
+                        polys = get_polygons_lod2(element)
+                        if not polys:
+                            polys = get_polygons_lod1(element)
+                            skipped_lod[1] = skipped_lod.get(1, 0) + 1
+                        else:
+                            skipped_lod[2] = skipped_lod.get(2, 0) + 1
+                elif lod == 2:
                     polys = get_polygons_lod2(element)
                     if not polys:
                         polys = get_polygons_lod1(element)
@@ -750,22 +776,41 @@ def interactive_mode():
             print(_warn(f'  ※ {lod_str} のいずれかを入力してください。'))
 
     # ── 5. マテリアルモード (-m) ──────────────────────
+    max_lod = max(args.lod_map.values()) if args.lod_map else 1
     print(_h('\n【マテリアルモード (-m)】'))
-    print('  1: なし          マテリアルなし（最も軽量）')
-    print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
-    print(f'  3: フォトテクスチャ  撮影写真を貼り付け{_warn("（※ データ量が大幅に増加）")}')
-    while True:
-        val = input('  マテリアルモード [1/2/3] (既定: 1): ').strip()
-        if val in ('', '1'):
-            args.mat_mode = 1
-            break
-        elif val == '2':
-            args.mat_mode = 2
-            break
-        elif val == '3':
-            args.mat_mode = 3
-            break
-        print(_warn('  ※ 1、2、3 のいずれかを入力してください。'))
+    if max_lod == 1:
+        print('  1: なし          マテリアルなし（最も軽量）')
+        print(_warn('  ※ LOD1 ではマテリアルなし（1）のみ選択できます。'))
+        args.mat_mode = 1
+    elif max_lod == 2:
+        print('  1: なし          マテリアルなし（最も軽量）')
+        print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
+        print(_warn('  ※ LOD2 ではフォトテクスチャ（3）は選択できません。'))
+        while True:
+            val = input('  マテリアルモード [1/2] (既定: 1): ').strip()
+            if val in ('', '1'):
+                args.mat_mode = 1
+                break
+            elif val == '2':
+                args.mat_mode = 2
+                break
+            print(_warn('  ※ 1 または 2 を入力してください。'))
+    else:  # max_lod >= 3
+        print('  1: なし          マテリアルなし（最も軽量）')
+        print('  2: 部位別カラー  屋根・壁・地面などを色分け（MTL ファイルを追加出力）')
+        print(f'  3: フォトテクスチャ  撮影写真を貼り付け{_warn("（※ データ量が大幅に増加）")}')
+        while True:
+            val = input('  マテリアルモード [1/2/3] (既定: 1): ').strip()
+            if val in ('', '1'):
+                args.mat_mode = 1
+                break
+            elif val == '2':
+                args.mat_mode = 2
+                break
+            elif val == '3':
+                args.mat_mode = 3
+                break
+            print(_warn('  ※ 1、2、3 のいずれかを入力してください。'))
 
     # ── 6. 出力フォルダ名 (-o) ────────────────────────
     print(_h('\n【出力フォルダ名 (-o)】'))
