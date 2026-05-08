@@ -555,8 +555,9 @@ def find_udx_dir(input_base):
 def detect_available_lods(input_dir, obj_type):
     """
     GMLファイルをテキスト走査し、実際に存在するLODレベルのリストを返す。
-    最初のGMLファイルを1行ずつ読み、LOD1〜4 のタグが現れた時点で確定する。
+    全GMLファイルを順に読み、LOD1〜4 のタグが現れた時点で確定する。
     全タイプ共通で {ns_prefix}:lod{N} の部分一致で検出する。
+    LODレベルごとにファイルが分かれているデータセット（大阪等）にも対応。
     """
     config = TYPE_CONFIG.get(obj_type, {})
     ns_prefix = config.get('ns_prefix', obj_type)
@@ -568,21 +569,24 @@ def detect_available_lods(input_dir, obj_type):
     if not gml_files:
         return [1]
 
-    sample_path = os.path.join(input_dir, gml_files[0])
     found = set()
     remaining = dict(search_tags)
 
-    try:
-        with open(sample_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                for lod_num in list(remaining):
-                    if remaining[lod_num] in line:
-                        found.add(lod_num)
-                        del remaining[lod_num]
-                if not remaining:
-                    break
-    except Exception:
-        return [1]
+    for gml_file in gml_files:
+        if not remaining:
+            break
+        sample_path = os.path.join(input_dir, gml_file)
+        try:
+            with open(sample_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    for lod_num in list(remaining):
+                        if remaining[lod_num] in line:
+                            found.add(lod_num)
+                            del remaining[lod_num]
+                    if not remaining:
+                        break
+        except Exception:
+            continue
 
     return sorted(found) if found else [1]
 
