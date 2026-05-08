@@ -34,8 +34,8 @@ jobs:
             ※ ダブルクリックしても開けない場合は、右クリックのプロパティから権限を付与してください。
 
             **Mac（v1.8 より対応）**
-            - Intel Mac の方：「plateu-converter-macos-intel.zip」
-            - Apple Silicon（M1/M2/M3）の方：「plateu-converter-macos-arm.zip」
+            - Intel Mac：「plateu-converter-macos-intel.zip」
+            - Apple Silicon（M1/M2/M3）：「plateu-converter-macos-arm.zip」
 
             解凍後、.app を右クリック →「開く」で起動してください。
             ※ 「開発元不明」の警告が出た場合は、システム設定 → プライバシーとセキュリティ から「このまま開く」を選択してください。
